@@ -5,12 +5,12 @@ use glam::UVec2;
 use log::{debug, info};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalSize, Size};
-use winit::event::WindowEvent;
+use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
+use winit::keyboard::{Key, NamedKey};
 use winit::platform::x11::WindowAttributesExtX11;
 use winit::window::{Window, WindowAttributes, WindowId};
 
-#[derive(Debug)]
 pub struct App {
     build_info: BuildInfo,
     viewport: UVec2,
@@ -52,8 +52,15 @@ impl ApplicationHandler for App {
         info!("Created window with viewport {:?}", self.viewport);
 
         let surface = TracerSurface::new_from_winit(self.window.as_ref().unwrap()).unwrap();
-        self.tracer =
-            Some(Tracer::new_windowed(self.viewport, Default::default(), surface).unwrap());
+        self.tracer = Some(
+            Tracer::new_windowed(
+                self.viewport,
+                self.build_info.clone(),
+                Default::default(),
+                surface,
+            )
+            .unwrap(),
+        );
         info!("Initialized windowed tracer");
     }
 
@@ -71,6 +78,19 @@ impl ApplicationHandler for App {
                 info!("Close requested, exiting event loop");
                 event_loop.exit();
             }
+            // Close on escape
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        logical_key: Key::Named(NamedKey::Escape),
+                        ..
+                    },
+                ..
+            } => {
+                info!("Escape pressed, exiting event loop");
+                event_loop.exit();
+            }
+
             _ => {}
         }
     }
