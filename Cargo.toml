@@ -1,0 +1,15 @@
+[package]
+name = "pathrs"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+build-info-build = "0.0.42"
+
+[dependencies]
+ash = "0.38.0"
+winit = "0.30.12"
+fern = "0.7.1"
+log = "0.4.17"
+build-info = "0.0.42"
+chrono = "0.4.42"
