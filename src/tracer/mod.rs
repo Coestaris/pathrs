@@ -5,6 +5,7 @@ pub mod front;
 pub mod instance;
 
 use crate::tracer::debug_messanger::DebugMessenger;
+use crate::tracer::device::LogicalDevice;
 use crate::tracer::front::headless::TracerHeadlessFront;
 use crate::tracer::front::windowed::TracerWindowedFront;
 use crate::tracer::front::Front;
@@ -16,30 +17,14 @@ use log::{debug, info, warn};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::Window;
 
-pub struct InstanceCompatibilities {
-    pub debug_utils_ext: bool,
-    pub validation_layer: bool,
-}
-
-pub struct QueueFamilyIndices {
-    pub graphics_family: u32,
-}
-
-impl Default for InstanceCompatibilities {
-    fn default() -> Self {
-        Self {
-            debug_utils_ext: false,
-            validation_layer: false,
-        }
-    }
-}
-
 pub struct Tracer<F: Front> {
     viewport: UVec2,
     pub front: F,
+
     pub entry: Entry,
     pub instance: Instance,
     pub debug_messenger: Option<DebugMessenger>,
+    pub logical_device: LogicalDevice,
 }
 
 impl<F: Front> Tracer<F> {
@@ -81,7 +66,8 @@ impl<F: Front> Tracer<F> {
         let (instance, instance_compatibilities) = Self::new_instance(&entry, bi)?;
 
         info!("Created Front");
-        let mut front = constructor(&entry, &instance).context("Failed to create tracer front-end")?;
+        let mut front =
+            constructor(&entry, &instance).context("Failed to create tracer front-end")?;
 
         info!("Setting up debug messanger");
         let debug_messenger = if DebugMessenger::available(&instance_compatibilities) {
@@ -94,8 +80,8 @@ impl<F: Front> Tracer<F> {
             None
         };
 
-        info!("Picking physical device");
-        let logical_device = Tracer::<D>::new_logical_device(&entry, &instance, &mut front)?;
+        info!("Creating logical device");
+        let logical_device = LogicalDevice::new(&entry, &instance, &mut front)?;
 
         Ok(Tracer {
             viewport,
@@ -103,6 +89,7 @@ impl<F: Front> Tracer<F> {
             entry,
             instance,
             debug_messenger,
+            logical_device,
         })
     }
 
@@ -128,6 +115,9 @@ impl<F: Front> Tracer<F> {
 impl<F: Front> Drop for Tracer<F> {
     fn drop(&mut self) {
         unsafe {
+            debug!("Destroying logical device");
+            self.logical_device.destroy();
+
             debug!("Destroying debug messanger");
             if let Some(mut debug_messenger) = self.debug_messenger.take() {
                 debug_messenger.destroy(&self.entry, &self.instance);

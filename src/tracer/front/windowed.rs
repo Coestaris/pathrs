@@ -1,6 +1,6 @@
-use crate::tracer::device::QueueFamily;
+use crate::tracer::device::{DeviceCompatibilities, QueueFamily};
 use crate::tracer::front::Front;
-use crate::tracer::InstanceCompatibilities;
+use crate::tracer::instance::InstanceCompatibilities;
 use ash::vk;
 use log::{debug, warn};
 use std::ffi::c_char;
@@ -175,11 +175,19 @@ impl Front for TracerWindowedFront {
         Ok(vec![])
     }
 
-    unsafe fn get_required_device_extensions() -> anyhow::Result<Vec<*const c_char>> {
+    unsafe fn get_required_device_extensions(
+        &self,
+        _available: &Vec<String>,
+        _compatibilities: &mut DeviceCompatibilities,
+    ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![vk::KHR_SWAPCHAIN_NAME.as_ptr()])
     }
 
-    unsafe fn get_required_device_layers() -> anyhow::Result<Vec<*const c_char>> {
+    unsafe fn get_required_device_layers(
+        &self,
+        _available: &Vec<String>,
+        _compatibilities: &mut DeviceCompatibilities,
+    ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }
 
@@ -202,7 +210,7 @@ impl Front for TracerWindowedFront {
     ) -> anyhow::Result<Vec<QueueFamily>> {
         let families = self.queue_families_for_device(entry, instance, physical_device)?;
         debug!("Windowed front queue families: {:?}", families);
-        
+
         self.queue_families = Some(families.clone());
         Ok(families.as_vec())
     }
@@ -211,6 +219,7 @@ impl Front for TracerWindowedFront {
         if !self.destroyed {
             let loader = ash::khr::surface::Instance::new(entry, instance);
             loader.destroy_surface(self.surface, None);
+            self.destroyed = true;
         } else {
             warn!("Front already destroyed");
         }
@@ -224,5 +233,13 @@ impl Front for TracerWindowedFront {
     unsafe fn present(&mut self) -> anyhow::Result<()> {
         // Presentation logic for the front-end
         Ok(())
+    }
+}
+
+impl Drop for TracerWindowedFront {
+    fn drop(&mut self) {
+        if !self.destroyed {
+            warn!("Leaked windowed front");
+        }
     }
 }

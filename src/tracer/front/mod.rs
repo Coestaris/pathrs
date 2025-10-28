@@ -1,7 +1,7 @@
-use crate::tracer::InstanceCompatibilities;
+use crate::tracer::device::{DeviceCompatibilities, QueueFamily};
+use crate::tracer::instance::InstanceCompatibilities;
 use ash::vk;
 use std::ffi::c_char;
-use crate::tracer::device::QueueFamily;
 
 pub mod headless;
 pub mod windowed;
@@ -21,11 +21,18 @@ pub trait Front {
         Ok(vec![])
     }
 
-    unsafe fn get_required_device_extensions() -> anyhow::Result<Vec<*const c_char>> {
+    unsafe fn get_required_device_extensions(
+        &self,
+        _available: &Vec<String>,
+        _compatibilities: &mut DeviceCompatibilities,
+    ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }
 
-    unsafe fn get_required_device_layers() -> anyhow::Result<Vec<*const c_char>> {
+    unsafe fn get_required_device_layers(
+        &self, _available: &Vec<String>,
+        _compatibilities: &mut DeviceCompatibilities,
+    ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }
 

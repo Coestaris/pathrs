@@ -1,11 +1,25 @@
 use crate::tracer::debug_messanger::DebugMessenger;
 use crate::tracer::front::Front;
-use crate::tracer::{InstanceCompatibilities, Tracer};
+use crate::tracer::Tracer;
 use anyhow::Context;
 use ash::{vk, Entry};
 use build_info::BuildInfo;
 use log::{debug, warn};
 use std::ffi::{c_char, CStr, CString};
+
+pub struct InstanceCompatibilities {
+    pub debug_utils_ext: bool,
+    pub validation_layer: bool,
+}
+
+impl Default for InstanceCompatibilities {
+    fn default() -> Self {
+        Self {
+            debug_utils_ext: false,
+            validation_layer: false,
+        }
+    }
+}
 
 impl<F: Front> Tracer<F> {
     unsafe fn get_instance_extensions(entry: &Entry) -> anyhow::Result<Vec<String>> {
