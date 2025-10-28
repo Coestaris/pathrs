@@ -1,6 +1,7 @@
 use crate::tracer::InstanceCompatibilities;
 use ash::vk;
 use std::ffi::c_char;
+use crate::tracer::device::QueueFamily;
 
 pub mod headless;
 pub mod windowed;
@@ -30,10 +31,20 @@ pub trait Front {
 
     unsafe fn is_device_suitable(
         &self,
+        _entry: &ash::Entry,
         _instance: &ash::Instance,
         _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<bool> {
         Ok(true)
+    }
+
+    unsafe fn find_queue_families(
+        &mut self,
+        _entry: &ash::Entry,
+        _instance: &ash::Instance,
+        _physical_device: vk::PhysicalDevice,
+    ) -> anyhow::Result<Vec<QueueFamily>> {
+        Ok(vec![])
     }
 
     unsafe fn destroy(&mut self, _entry: &ash::Entry, _instance: &ash::Instance) {}

@@ -12,7 +12,7 @@ use anyhow::Context;
 use ash::{Entry, Instance};
 use build_info::BuildInfo;
 use glam::UVec2;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::Window;
 
@@ -74,16 +74,16 @@ impl<F: Front> Tracer<F> {
         bi: BuildInfo,
         constructor: impl FnOnce(&ash::Entry, &ash::Instance) -> anyhow::Result<D>,
     ) -> anyhow::Result<Tracer<D>> {
-        debug!("Creating Vulkan instance");
+        info!("Creating Vulkan instance");
         let entry = Self::new_entry()?;
 
-        debug!("Created Vulkan entry");
+        info!("Created Vulkan entry");
         let (instance, instance_compatibilities) = Self::new_instance(&entry, bi)?;
 
-        debug!("Created Front");
-        let front = constructor(&entry, &instance).context("Failed to create tracer front-end")?;
+        info!("Created Front");
+        let mut front = constructor(&entry, &instance).context("Failed to create tracer front-end")?;
 
-        debug!("Setting up debug messanger");
+        info!("Setting up debug messanger");
         let debug_messenger = if DebugMessenger::available(&instance_compatibilities) {
             Some(
                 DebugMessenger::new(&entry, &instance)
@@ -93,6 +93,9 @@ impl<F: Front> Tracer<F> {
             warn!("Debug messanger not supported on this system");
             None
         };
+
+        info!("Picking physical device");
+        let logical_device = Tracer::<D>::new_logical_device(&entry, &instance, &mut front)?;
 
         Ok(Tracer {
             viewport,
