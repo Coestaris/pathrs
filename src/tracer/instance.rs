@@ -1,13 +1,13 @@
-use crate::tracer::back::{InstanceCompatibilities, TracerBack};
 use crate::tracer::debug_messanger::DebugMessenger;
-use crate::tracer::front::TracerFront;
+use crate::tracer::front::Front;
+use crate::tracer::{InstanceCompatibilities, Tracer};
 use anyhow::Context;
 use ash::{vk, Entry};
 use build_info::BuildInfo;
 use log::{debug, warn};
 use std::ffi::{c_char, CStr, CString};
 
-impl TracerBack {
+impl<F: Front> Tracer<F> {
     unsafe fn get_instance_extensions(entry: &Entry) -> anyhow::Result<Vec<String>> {
         let extension_properties = entry
             .enumerate_instance_extension_properties(None)
@@ -38,7 +38,6 @@ impl TracerBack {
 
     unsafe fn get_required_instance_extensions(
         entry: &Entry,
-        front: &TracerFront,
         compatibilities: &mut InstanceCompatibilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         let extensions = Self::get_instance_extensions(entry)?;
@@ -49,13 +48,15 @@ impl TracerBack {
             &extensions,
             compatibilities,
         )?);
-        required.extend(front.get_required_instance_extensions(&extensions, compatibilities)?);
+        required.extend(F::get_required_instance_extensions(
+            &extensions,
+            compatibilities,
+        )?);
         Ok(required)
     }
 
     unsafe fn get_required_instance_layers(
         entry: &Entry,
-        front: &TracerFront,
         compatibilities: &mut InstanceCompatibilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         let layers = Self::get_instance_layers(entry)?;
@@ -66,13 +67,12 @@ impl TracerBack {
             &layers,
             compatibilities,
         )?);
-        required.extend(front.get_required_instance_layers(&layers, compatibilities)?);
+        required.extend(F::get_required_instance_layers(&layers, compatibilities)?);
         Ok(required)
     }
 
     pub unsafe fn new_instance(
         entry: &Entry,
-        front: &TracerFront,
         bi: BuildInfo,
     ) -> anyhow::Result<(ash::Instance, InstanceCompatibilities)> {
         let app_name = CString::new(bi.crate_info.name)?;
@@ -96,9 +96,8 @@ impl TracerBack {
 
         let mut compatibilities = InstanceCompatibilities::default();
         let instance_extensions =
-            Self::get_required_instance_extensions(entry, front, &mut compatibilities)?;
-        let instance_layers =
-            Self::get_required_instance_layers(entry, front, &mut compatibilities)?;
+            Self::get_required_instance_extensions(entry, &mut compatibilities)?;
+        let instance_layers = Self::get_required_instance_layers(entry, &mut compatibilities)?;
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(&instance_extensions)

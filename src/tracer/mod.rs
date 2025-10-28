@@ -1,62 +1,140 @@
-mod back;
-mod config;
+pub mod config;
+pub mod debug_messanger;
+pub mod device;
 pub mod front;
-mod instance;
-mod debug_messanger;
+pub mod instance;
 
-use crate::tracer::back::TracerBack;
-use crate::tracer::config::TracerConfig;
-use crate::tracer::front::{TracerFront, TracerSurface};
+use crate::tracer::debug_messanger::DebugMessenger;
+use crate::tracer::front::headless::TracerHeadlessFront;
+use crate::tracer::front::windowed::TracerWindowedFront;
+use crate::tracer::front::Front;
 use anyhow::Context;
+use ash::{Entry, Instance};
 use build_info::BuildInfo;
 use glam::UVec2;
+use log::{debug, warn};
+use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use winit::window::Window;
 
-pub struct Tracer {
-    back: TracerBack,
-    config: TracerConfig,
-    viewport: UVec2,
+pub struct InstanceCompatibilities {
+    pub debug_utils_ext: bool,
+    pub validation_layer: bool,
 }
 
-impl Tracer {
-    pub fn new_headless(
-        viewport: UVec2,
-        bi: BuildInfo,
-        config: TracerConfig,
-    ) -> anyhow::Result<Self> {
-        unsafe {
-            Ok(Self {
-                back: TracerBack::new(viewport, bi, TracerFront::new_headless())?,
-                config,
-                viewport,
-            })
+pub struct QueueFamilyIndices {
+    pub graphics_family: u32,
+}
+
+impl Default for InstanceCompatibilities {
+    fn default() -> Self {
+        Self {
+            debug_utils_ext: false,
+            validation_layer: false,
         }
     }
+}
 
-    pub fn new_windowed(
-        viewport: UVec2,
-        bi: BuildInfo,
-        config: TracerConfig,
-        surface: TracerSurface,
-    ) -> anyhow::Result<Self> {
-        unsafe {
-            Ok(Self {
-                back: TracerBack::new(viewport, bi, TracerFront::new_windowed(surface))?,
-                config,
-                viewport,
-            })
-        }
+pub struct Tracer<F: Front> {
+    viewport: UVec2,
+    pub front: F,
+    pub entry: Entry,
+    pub instance: Instance,
+    pub debug_messenger: Option<DebugMessenger>,
+}
+
+impl<F: Front> Tracer<F> {
+    unsafe fn new_entry() -> anyhow::Result<ash::Entry> {
+        Ok(Entry::load()?)
     }
 
-    pub fn resize(&mut self, size: UVec2) -> anyhow::Result<()> {
+    pub unsafe fn new_windowed(
+        viewport: UVec2,
+        bi: BuildInfo,
+        window: &Window,
+    ) -> anyhow::Result<Tracer<TracerWindowedFront>> {
+        Self::new(viewport, bi, |entry, instance| {
+            TracerWindowedFront::new(
+                entry,
+                instance,
+                window.window_handle()?,
+                window.display_handle()?,
+            )
+        })
+    }
+
+    pub unsafe fn new_headless(
+        viewport: UVec2,
+        bi: BuildInfo,
+    ) -> anyhow::Result<Tracer<TracerHeadlessFront>> {
+        Self::new(viewport, bi, |_, _| Ok(TracerHeadlessFront::new()))
+    }
+
+    pub unsafe fn new<D: Front>(
+        viewport: UVec2,
+        bi: BuildInfo,
+        constructor: impl FnOnce(&ash::Entry, &ash::Instance) -> anyhow::Result<D>,
+    ) -> anyhow::Result<Tracer<D>> {
+        debug!("Creating Vulkan instance");
+        let entry = Self::new_entry()?;
+
+        debug!("Created Vulkan entry");
+        let (instance, instance_compatibilities) = Self::new_instance(&entry, bi)?;
+
+        debug!("Created Front");
+        let front = constructor(&entry, &instance).context("Failed to create tracer front-end")?;
+
+        debug!("Setting up debug messanger");
+        let debug_messenger = if DebugMessenger::available(&instance_compatibilities) {
+            Some(
+                DebugMessenger::new(&entry, &instance)
+                    .context("Failed to create debug messanger")?,
+            )
+        } else {
+            warn!("Debug messanger not supported on this system");
+            None
+        };
+
+        Ok(Tracer {
+            viewport,
+            front,
+            entry,
+            instance,
+            debug_messenger,
+        })
+    }
+
+    pub unsafe fn trace(&mut self) -> anyhow::Result<()> {
+        self.front
+            .present()
+            .context("Failed to present tracer front")?;
+
+        Ok(())
+    }
+
+    pub unsafe fn resize(&mut self, size: UVec2) -> anyhow::Result<()> {
         self.viewport = size;
-        self.back
+
+        self.front
             .resize(size)
-            .context("Failed to resize tracer back")?;
+            .with_context(|| format!("Failed to resize tracer front to {:?}", size))?;
+
         Ok(())
     }
+}
 
-    pub fn trace(&mut self) -> anyhow::Result<()> {
-        self.back.trace().context("Failed to trace")?;
-        Ok(())
+impl<F: Front> Drop for Tracer<F> {
+    fn drop(&mut self) {
+        unsafe {
+            debug!("Destroying debug messanger");
+            if let Some(mut debug_messenger) = self.debug_messenger.take() {
+                debug_messenger.destroy(&self.entry, &self.instance);
+            }
+
+            debug!("Destroying front-end");
+            self.front.destroy(&self.entry, &self.instance);
+
+            debug!("Destroying Vulkan instance");
+            self.instance.destroy_instance(None);
+        }
     }
 }

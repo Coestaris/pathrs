@@ -1,4 +1,4 @@
-use crate::tracer::front::TracerSurface;
+use crate::tracer::front::windowed::TracerWindowedFront;
 use crate::tracer::Tracer;
 use build_info::BuildInfo;
 use glam::UVec2;
@@ -11,11 +11,15 @@ use winit::keyboard::{Key, NamedKey};
 use winit::platform::x11::WindowAttributesExtX11;
 use winit::window::{Window, WindowAttributes, WindowId};
 
+struct Context {
+    window: Window,
+    tracer: Tracer<TracerWindowedFront>,
+}
+
 pub struct App {
     build_info: BuildInfo,
     viewport: UVec2,
-    window: Option<Window>,
-    tracer: Option<Tracer>,
+    context: Option<Context>,
 }
 
 impl App {
@@ -23,8 +27,7 @@ impl App {
         Self {
             viewport: initial_viewport,
             build_info: bi,
-            window: None,
-            tracer: None,
+            context: None,
         }
     }
 }
@@ -48,32 +51,31 @@ impl ApplicationHandler for App {
             winit::platform::x11::WindowType::Dialog,
         ]);
 
-        self.window = Some(event_loop.create_window(attributes).unwrap());
-        info!("Created window with viewport {:?}", self.viewport);
-
-        let surface = TracerSurface::new_from_winit(self.window.as_ref().unwrap()).unwrap();
-        self.tracer = Some(
-            Tracer::new_windowed(
+        unsafe {
+            let window = event_loop.create_window(attributes).unwrap();
+            let tracer = Tracer::<TracerWindowedFront>::new_windowed(
                 self.viewport,
                 self.build_info.clone(),
-                Default::default(),
-                surface,
+                &window,
             )
-            .unwrap(),
-        );
+            .unwrap();
+            self.context = Some(Context { window, tracer });
+        }
+
         info!("Initialized windowed tracer");
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        let context = self.context.as_mut().unwrap();
         match event {
-            WindowEvent::Resized(physical_size) => {
+            WindowEvent::Resized(physical_size) => unsafe {
                 info!("Window resized to {:?}", physical_size);
                 self.viewport = UVec2::new(physical_size.width, physical_size.height);
-                self.tracer.as_mut().unwrap().resize(self.viewport).unwrap();
-            }
-            WindowEvent::RedrawRequested => {
-                self.tracer.as_mut().unwrap().trace().unwrap();
-            }
+                context.tracer.resize(self.viewport).unwrap();
+            },
+            WindowEvent::RedrawRequested => unsafe {
+                context.tracer.trace().unwrap();
+            },
             WindowEvent::CloseRequested => {
                 info!("Close requested, exiting event loop");
                 event_loop.exit();
@@ -96,6 +98,7 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, _: &ActiveEventLoop) {
-        self.window.as_ref().unwrap().request_redraw();
+        let context = self.context.as_mut().unwrap();
+        context.window.request_redraw();
     }
 }

@@ -1,8 +1,8 @@
-use crate::tracer::back::InstanceCompatibilities;
 use anyhow::Context;
 use ash::{vk, Entry};
 use log::warn;
 use std::ffi::{c_char, CStr};
+use crate::tracer::InstanceCompatibilities;
 
 unsafe extern "system" fn debug_callback(
     _message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
