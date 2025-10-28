@@ -1,11 +1,11 @@
 use crate::tracer::back::{InstanceCompatibilities, TracerBack};
+use crate::tracer::debug_messanger::DebugMessenger;
 use crate::tracer::front::TracerFront;
 use anyhow::Context;
 use ash::{vk, Entry};
 use build_info::BuildInfo;
 use log::{debug, warn};
 use std::ffi::{c_char, CStr, CString};
-
 
 impl TracerBack {
     unsafe fn get_instance_extensions(entry: &Entry) -> anyhow::Result<Vec<String>> {
@@ -45,14 +45,11 @@ impl TracerBack {
         debug!("Available instance extensions: {:?}", extensions);
 
         let mut required = vec![];
-        if extensions.contains(&"VK_EXT_debug_utils".to_string()) {
-            const VK_EXT_DEBUG_UTILS: &CStr =
-                unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_EXT_debug_utils\0") };
-            required.push(VK_EXT_DEBUG_UTILS.as_ptr());
-            compatibilities.debug_utils_ext = true;
-        }
-
-        required.extend(front.get_required_instance_extensions()?);
+        required.extend(DebugMessenger::get_required_instance_extensions(
+            &extensions,
+            compatibilities,
+        )?);
+        required.extend(front.get_required_instance_extensions(&extensions, compatibilities)?);
         Ok(required)
     }
 
@@ -65,14 +62,11 @@ impl TracerBack {
         debug!("Available instance layers: {:?}", layers);
 
         let mut required = vec![];
-        if layers.contains(&"VK_LAYER_KHRONOS_validation".to_string()) {
-            const VK_LAYER_KHRONOS_VALIDATION: &CStr =
-                unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_LAYER_KHRONOS_validation\0") };
-            required.push(VK_LAYER_KHRONOS_VALIDATION.as_ptr());
-            compatibilities.validation_layer = true;
-        }
-
-        required.extend(front.get_required_instance_layers()?);
+        required.extend(DebugMessenger::get_required_instance_layers(
+            &layers,
+            compatibilities,
+        )?);
+        required.extend(front.get_required_instance_layers(&layers, compatibilities)?);
         Ok(required)
     }
 

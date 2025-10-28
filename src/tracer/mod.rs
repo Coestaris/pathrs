@@ -2,7 +2,7 @@ mod back;
 mod config;
 pub mod front;
 mod instance;
-mod debug_utils;
+mod debug_messanger;
 
 use crate::tracer::back::TracerBack;
 use crate::tracer::config::TracerConfig;

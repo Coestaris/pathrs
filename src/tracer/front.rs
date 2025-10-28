@@ -1,3 +1,4 @@
+use crate::tracer::back::InstanceCompatibilities;
 use ash::vk;
 use std::ffi::c_char;
 use winit::window::Window;
@@ -43,6 +44,8 @@ impl TracerFront {
 
     pub(super) unsafe fn get_required_instance_extensions(
         &self,
+        _available: &Vec<String>,
+        _compatibilities: &mut InstanceCompatibilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(match self {
             TracerFront::Windowed(_) => vec![
@@ -62,7 +65,11 @@ impl TracerFront {
         })
     }
 
-    pub(super) unsafe fn get_required_instance_layers(&self) -> anyhow::Result<Vec<*const c_char>> {
+    pub(super) unsafe fn get_required_instance_layers(
+        &self,
+        _available: &Vec<String>,
+        _compatibilities: &mut InstanceCompatibilities,
+    ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }
 }

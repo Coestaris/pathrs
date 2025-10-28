@@ -1,3 +1,4 @@
+use crate::tracer::debug_messanger::DebugMessenger;
 use crate::tracer::front::TracerFront;
 use anyhow::Context;
 use ash::vk::DebugUtilsMessengerEXT;
@@ -26,7 +27,7 @@ pub struct TracerBack {
 
     pub entry: Entry,
     pub instance: Instance,
-    pub debug_messenger: Option<DebugUtilsMessengerEXT>,
+    pub debug_messenger: Option<DebugMessenger>,
 }
 
 impl TracerBack {
@@ -42,8 +43,11 @@ impl TracerBack {
         let (instance, instance_compatibilities) = Self::new_instance(&entry, &front, bi)?;
 
         debug!("Setting up debug messanger");
-        let debug_messenger = if Self::supports_debug_messanger(&instance_compatibilities) {
-            Some(Self::new_debug_messanger(&entry, &instance)?)
+        let debug_messenger = if DebugMessenger::available(&instance_compatibilities) {
+            Some(
+                DebugMessenger::new(&entry, &instance)
+                    .context("Failed to create debug messanger")?,
+            )
         } else {
             warn!("Debug messanger not supported on this system");
             None
@@ -83,7 +87,9 @@ impl Drop for TracerBack {
     fn drop(&mut self) {
         unsafe {
             debug!("Destroying debug messanger");
-            self.destroy_debug_messanger();
+            if let Some(mut debug_messenger) = self.debug_messenger.take() {
+                debug_messenger.destroy(&self.entry, &self.instance);
+            }
 
             debug!("Destroying Vulkan instance");
             self.instance.destroy_instance(None);
