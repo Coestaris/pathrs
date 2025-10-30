@@ -82,7 +82,7 @@ impl QueueFamily {
 
 pub struct LogicalDevice {
     compatibilities: DeviceCompatibilities,
-    device: Device,
+    pub(crate) device: Device,
     queues: CommonQueues,
     destroyed: bool,
 }
@@ -319,7 +319,13 @@ impl LogicalDevice {
         let font_queues = font_queues.into_queues(&logical_device)?;
         debug!("Acquired front queues: {:?}", font_queues);
 
-        front.set_queues(font_queues)?;
+        front.set_device(
+            entry,
+            instance,
+            &logical_device,
+            physical_device,
+            font_queues,
+        )?;
 
         Ok(Self {
             compatibilities,

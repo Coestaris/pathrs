@@ -3,6 +3,7 @@ pub mod debug_messanger;
 pub mod device;
 pub mod front;
 pub mod instance;
+mod shader;
 
 use crate::tracer::debug_messanger::DebugMessenger;
 use crate::tracer::device::LogicalDevice;
@@ -41,6 +42,7 @@ impl<F: Front> Tracer<F> {
             TracerWindowedFront::new(
                 entry,
                 instance,
+                viewport,
                 window.window_handle()?,
                 window.display_handle()?,
             )
@@ -115,6 +117,9 @@ impl<F: Front> Tracer<F> {
 impl<F: Front> Drop for Tracer<F> {
     fn drop(&mut self) {
         unsafe {
+            debug!("Destroying front-end");
+            self.front.destroy(&self.entry, &self.instance, &self.logical_device.device);
+
             debug!("Destroying logical device");
             self.logical_device.destroy();
 
@@ -122,9 +127,6 @@ impl<F: Front> Drop for Tracer<F> {
             if let Some(mut debug_messenger) = self.debug_messenger.take() {
                 debug_messenger.destroy(&self.entry, &self.instance);
             }
-
-            debug!("Destroying front-end");
-            self.front.destroy(&self.entry, &self.instance);
 
             debug!("Destroying Vulkan instance");
             self.instance.destroy_instance(None);

@@ -40,8 +40,4 @@ impl Front for TracerHeadlessFront {
     ) -> anyhow::Result<HeadlessQueueFamilyIndices> {
         Ok(HeadlessQueueFamilyIndices {})
     }
-
-    unsafe fn set_queues(&mut self, _queues: HeadlessQueues) -> anyhow::Result<()> {
-        Ok(())
-    }
 }

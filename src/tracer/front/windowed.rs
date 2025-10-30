@@ -1,6 +1,8 @@
 use crate::tracer::device::{DeviceCompatibilities, QueueFamily};
+use crate::tracer::front::runtime::Runtime;
 use crate::tracer::front::{Front, QueueFamilyIndices};
 use crate::tracer::instance::InstanceCompatibilities;
+use anyhow::Context;
 use ash::{vk, Device};
 use log::{debug, warn};
 use std::ffi::c_char;
@@ -111,8 +113,9 @@ impl Mode {
 
 pub struct TracerWindowedFront {
     surface: vk::SurfaceKHR,
+    viewport: glam::UVec2,
     platform: Mode,
-    queues: Option<WindowedQueues>,
+    runtime: Option<Runtime>,
     destroyed: bool,
 }
 
@@ -120,6 +123,7 @@ impl TracerWindowedFront {
     pub unsafe fn new(
         entry: &ash::Entry,
         instance: &ash::Instance,
+        viewport: glam::UVec2,
         window: WindowHandle,
         display: DisplayHandle,
     ) -> anyhow::Result<Self> {
@@ -127,10 +131,31 @@ impl TracerWindowedFront {
 
         Ok(Self {
             surface: mode.create_surface(entry, instance)?,
+            viewport,
             platform: mode,
-            queues: None,
+            runtime: None,
             destroyed: false,
         })
+    }
+
+    unsafe fn is_swapchain_format_supported(
+        &self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+    ) -> anyhow::Result<bool> {
+        let surface_loader = ash::khr::surface::Instance::new(entry, instance);
+        let formats =
+            surface_loader.get_physical_device_surface_formats(physical_device, self.surface)?;
+        let modes = surface_loader
+            .get_physical_device_surface_present_modes(physical_device, self.surface)?;
+
+        debug!(
+            "Supported swapchain formats: {:?}, modes: {:?}",
+            formats, modes
+        );
+
+        Ok(!formats.is_empty() && !modes.is_empty())
     }
 }
 
@@ -185,9 +210,18 @@ impl Front for TracerWindowedFront {
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<bool> {
-        Ok(self
+        let queues_ok = self
             .find_queue_families(entry, instance, physical_device)
-            .is_ok())
+            .is_ok();
+        let swapchain_format_ok = self
+            .is_swapchain_format_supported(entry, instance, physical_device)
+            .is_ok();
+
+        debug!(
+            "queues_ok: {}, swapchain_format_ok: {}",
+            queues_ok, swapchain_format_ok
+        );
+        Ok(queues_ok && swapchain_format_ok)
     }
 
     unsafe fn find_queue_families(
@@ -224,15 +258,39 @@ impl Front for TracerWindowedFront {
         })
     }
 
-    unsafe fn set_queues(&mut self, queues: WindowedQueues) -> anyhow::Result<()> {
-        self.queues = Some(queues);
+    unsafe fn set_device(
+        &mut self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &Device,
+        physical_device: vk::PhysicalDevice,
+        queues: WindowedQueues,
+    ) -> anyhow::Result<()> {
+        self.runtime = Some(
+            Runtime::new(
+                self.viewport,
+                entry,
+                instance,
+                device,
+                self.surface,
+                physical_device,
+                queues,
+            )
+            .context("Failed to create windowed runtime")?,
+        );
         Ok(())
     }
 
-    unsafe fn destroy(&mut self, entry: &ash::Entry, instance: &ash::Instance) {
+    unsafe fn destroy(&mut self, entry: &ash::Entry, instance: &ash::Instance, device: &Device) {
         if !self.destroyed {
-            let loader = ash::khr::surface::Instance::new(entry, instance);
-            loader.destroy_surface(self.surface, None);
+            if let Some(mut runtime) = self.runtime.take() {
+                debug!("Destroying windowed runtime");
+                runtime.destroy(entry, instance, device);
+            }
+
+            debug!("Destroying windowed surface");
+            let surface = ash::khr::surface::Instance::new(entry, instance);
+            surface.destroy_surface(self.surface, None);
             self.destroyed = true;
         } else {
             warn!("Front already destroyed");

@@ -1,11 +1,12 @@
 use crate::tracer::device::{DeviceCompatibilities, QueueFamily};
 use crate::tracer::instance::InstanceCompatibilities;
-use ash::vk;
+use ash::{vk, Device};
 use std::ffi::c_char;
 use std::fmt::Debug;
 
 pub mod headless;
 pub mod windowed;
+mod runtime;
 
 pub trait QueueFamilyIndices {
     type Queues: Debug;
@@ -63,12 +64,18 @@ pub trait Front {
         _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<Self::FrontQueueFamilyIndices>;
 
-    unsafe fn set_queues(
+    unsafe fn set_device(
         &mut self,
+        _entry: &ash::Entry,
+        _instance: &ash::Instance,
+        _device: &Device,
+        _physical_device: vk::PhysicalDevice,
         _queues: <<Self as Front>::FrontQueueFamilyIndices as QueueFamilyIndices>::Queues,
-    ) -> anyhow::Result<()>;
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    unsafe fn destroy(&mut self, _entry: &ash::Entry, _instance: &ash::Instance) {}
+    unsafe fn destroy(&mut self, _entry: &ash::Entry, _instance: &ash::Instance, _device: &Device) {}
 
     unsafe fn resize(&mut self, _size: glam::UVec2) -> anyhow::Result<()> {
         Ok(())
