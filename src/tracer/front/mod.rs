@@ -2,11 +2,21 @@ use crate::tracer::device::{DeviceCompatibilities, QueueFamily};
 use crate::tracer::instance::InstanceCompatibilities;
 use ash::vk;
 use std::ffi::c_char;
+use std::fmt::Debug;
 
 pub mod headless;
 pub mod windowed;
 
+pub trait QueueFamilyIndices {
+    type Queues: Debug;
+
+    fn as_families(&self) -> Vec<QueueFamily>;
+    unsafe fn into_queues(self, device: &ash::Device) -> anyhow::Result<Self::Queues>;
+}
+
 pub trait Front {
+    type FrontQueueFamilyIndices: QueueFamilyIndices + Debug;
+
     unsafe fn get_required_instance_extensions(
         _available: &Vec<String>,
         _compatibilities: &mut InstanceCompatibilities,
@@ -30,7 +40,8 @@ pub trait Front {
     }
 
     unsafe fn get_required_device_layers(
-        &self, _available: &Vec<String>,
+        &self,
+        _available: &Vec<String>,
         _compatibilities: &mut DeviceCompatibilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
@@ -46,13 +57,16 @@ pub trait Front {
     }
 
     unsafe fn find_queue_families(
-        &mut self,
+        &self,
         _entry: &ash::Entry,
         _instance: &ash::Instance,
         _physical_device: vk::PhysicalDevice,
-    ) -> anyhow::Result<Vec<QueueFamily>> {
-        Ok(vec![])
-    }
+    ) -> anyhow::Result<Self::FrontQueueFamilyIndices>;
+
+    unsafe fn set_queues(
+        &mut self,
+        _queues: <<Self as Front>::FrontQueueFamilyIndices as QueueFamilyIndices>::Queues,
+    ) -> anyhow::Result<()>;
 
     unsafe fn destroy(&mut self, _entry: &ash::Entry, _instance: &ash::Instance) {}
 

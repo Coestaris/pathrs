@@ -1,7 +1,7 @@
 use crate::tracer::device::{DeviceCompatibilities, QueueFamily};
-use crate::tracer::front::Front;
+use crate::tracer::front::{Front, QueueFamilyIndices};
 use crate::tracer::instance::InstanceCompatibilities;
-use ash::vk;
+use ash::{vk, Device};
 use log::{debug, warn};
 use std::ffi::c_char;
 use winit::raw_window_handle::{
@@ -10,13 +10,22 @@ use winit::raw_window_handle::{
 };
 
 #[derive(Debug, Clone)]
-struct WindowedQueueFamilyIndices {
+pub struct WindowedQueueFamilyIndices {
     pub graphics_family: u32,
     pub present_family: u32,
 }
 
-impl WindowedQueueFamilyIndices {
-    fn as_vec(&self) -> Vec<QueueFamily> {
+#[derive(Clone, Debug)]
+pub struct WindowedQueues {
+    pub indices: WindowedQueueFamilyIndices,
+    pub graphics_queue: vk::Queue,
+    pub present_queue: vk::Queue,
+}
+
+impl QueueFamilyIndices for WindowedQueueFamilyIndices {
+    type Queues = WindowedQueues;
+
+    fn as_families(&self) -> Vec<QueueFamily> {
         let mut indices = vec![];
         indices.push(QueueFamily {
             index: self.graphics_family,
@@ -27,6 +36,17 @@ impl WindowedQueueFamilyIndices {
             priorities: vec![1.0],
         });
         indices
+    }
+
+    unsafe fn into_queues(self, device: &Device) -> anyhow::Result<Self::Queues> {
+        let graphics_queue = device.get_device_queue(self.graphics_family, 0);
+        let presentation_queue = device.get_device_queue(self.present_family, 0);
+
+        Ok(WindowedQueues {
+            indices: self,
+            graphics_queue,
+            present_queue: presentation_queue,
+        })
     }
 }
 
@@ -92,7 +112,7 @@ impl Mode {
 pub struct TracerWindowedFront {
     surface: vk::SurfaceKHR,
     platform: Mode,
-    queue_families: Option<WindowedQueueFamilyIndices>,
+    queues: Option<WindowedQueues>,
     destroyed: bool,
 }
 
@@ -108,47 +128,15 @@ impl TracerWindowedFront {
         Ok(Self {
             surface: mode.create_surface(entry, instance)?,
             platform: mode,
-            queue_families: None,
+            queues: None,
             destroyed: false,
-        })
-    }
-
-    unsafe fn queue_families_for_device(
-        &self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        physical_device: vk::PhysicalDevice,
-    ) -> anyhow::Result<WindowedQueueFamilyIndices> {
-        let mut graphics_family = None;
-        let mut present_family = None;
-
-        let queue_family_properties =
-            instance.get_physical_device_queue_family_properties(physical_device);
-
-        for (i, queue_family) in queue_family_properties.iter().enumerate() {
-            let is_graphics = queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS);
-            let present_support =
-                self.platform
-                    .supports_present(entry, instance, physical_device, i as u32);
-            // TODO: Check the presentation mode and formats
-
-            if is_graphics && present_support {
-                graphics_family = Some(i as u32);
-                present_family = Some(i as u32);
-                break;
-            }
-        }
-
-        Ok(WindowedQueueFamilyIndices {
-            graphics_family: graphics_family
-                .ok_or_else(|| anyhow::anyhow!("No suitable graphics queue family found"))?,
-            present_family: present_family
-                .ok_or_else(|| anyhow::anyhow!("No suitable present queue family found"))?,
         })
     }
 }
 
 impl Front for TracerWindowedFront {
+    type FrontQueueFamilyIndices = WindowedQueueFamilyIndices;
+
     unsafe fn get_required_instance_extensions(
         _available: &Vec<String>,
         _compatibilities: &mut InstanceCompatibilities,
@@ -198,21 +186,47 @@ impl Front for TracerWindowedFront {
         physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<bool> {
         Ok(self
-            .queue_families_for_device(entry, instance, physical_device)
+            .find_queue_families(entry, instance, physical_device)
             .is_ok())
     }
 
     unsafe fn find_queue_families(
-        &mut self,
+        &self,
         entry: &ash::Entry,
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-    ) -> anyhow::Result<Vec<QueueFamily>> {
-        let families = self.queue_families_for_device(entry, instance, physical_device)?;
-        debug!("Windowed front queue families: {:?}", families);
+    ) -> anyhow::Result<WindowedQueueFamilyIndices> {
+        let mut graphics_family = None;
+        let mut present_family = None;
 
-        self.queue_families = Some(families.clone());
-        Ok(families.as_vec())
+        let queue_family_properties =
+            instance.get_physical_device_queue_family_properties(physical_device);
+
+        for (i, queue_family) in queue_family_properties.iter().enumerate() {
+            let is_graphics = queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS);
+            let present_support =
+                self.platform
+                    .supports_present(entry, instance, physical_device, i as u32);
+            // TODO: Check the presentation mode and formats
+
+            if is_graphics && present_support {
+                graphics_family = Some(i as u32);
+                present_family = Some(i as u32);
+                break;
+            }
+        }
+
+        Ok(WindowedQueueFamilyIndices {
+            graphics_family: graphics_family
+                .ok_or_else(|| anyhow::anyhow!("No suitable graphics queue family found"))?,
+            present_family: present_family
+                .ok_or_else(|| anyhow::anyhow!("No suitable present queue family found"))?,
+        })
+    }
+
+    unsafe fn set_queues(&mut self, queues: WindowedQueues) -> anyhow::Result<()> {
+        self.queues = Some(queues);
+        Ok(())
     }
 
     unsafe fn destroy(&mut self, entry: &ash::Entry, instance: &ash::Instance) {

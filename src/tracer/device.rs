@@ -1,7 +1,7 @@
-use crate::tracer::front::Front;
+use crate::tracer::front::{Front, QueueFamilyIndices};
 use crate::tracer::{front, Tracer};
 use anyhow::Context;
-use ash::vk::{DeviceQueueCreateInfo, PhysicalDeviceFeatures};
+use ash::vk::{DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceFeatures};
 use ash::{vk, Device, Instance};
 use log::{debug, warn};
 
@@ -14,13 +14,22 @@ impl Default for DeviceCompatibilities {
 }
 
 #[derive(Debug)]
-pub struct QueueFamilyIndices {
+pub struct CommonQueueFamilyIndices {
     pub graphics_family: u32,
     pub compute_family: u32,
 }
 
-impl QueueFamilyIndices {
-    fn as_vec(&self) -> Vec<QueueFamily> {
+#[derive(Debug)]
+pub struct CommonQueues {
+    pub indices: CommonQueueFamilyIndices,
+    pub graphics_queue: vk::Queue,
+    pub compute_queue: vk::Queue,
+}
+
+impl QueueFamilyIndices for CommonQueueFamilyIndices {
+    type Queues = CommonQueues;
+
+    fn as_families(&self) -> Vec<QueueFamily> {
         let mut indices = vec![];
         indices.push(QueueFamily {
             index: self.graphics_family,
@@ -32,6 +41,17 @@ impl QueueFamilyIndices {
         });
 
         indices
+    }
+
+    unsafe fn into_queues(self, device: &Device) -> anyhow::Result<CommonQueues> {
+        let graphics_queue = device.get_device_queue(self.graphics_family, 0);
+        let compute_queue = device.get_device_queue(self.compute_family, 0);
+
+        Ok(CommonQueues {
+            indices: self,
+            graphics_queue,
+            compute_queue,
+        })
     }
 }
 
@@ -63,7 +83,7 @@ impl QueueFamily {
 pub struct LogicalDevice {
     compatibilities: DeviceCompatibilities,
     device: Device,
-    family_indices: QueueFamilyIndices,
+    queues: CommonQueues,
     destroyed: bool,
 }
 
@@ -143,7 +163,7 @@ impl LogicalDevice {
     unsafe fn find_queue_families(
         instance: &ash::Instance,
         device: vk::PhysicalDevice,
-    ) -> anyhow::Result<QueueFamilyIndices> {
+    ) -> anyhow::Result<CommonQueueFamilyIndices> {
         let mut graphics_queue_index = None;
         let mut compute_queue_index = None;
 
@@ -160,7 +180,7 @@ impl LogicalDevice {
             }
         }
 
-        Ok(QueueFamilyIndices {
+        Ok(CommonQueueFamilyIndices {
             graphics_family: graphics_queue_index
                 .ok_or_else(|| anyhow::anyhow!("No graphics queue family found"))?,
             compute_family: compute_queue_index
@@ -263,12 +283,13 @@ impl LogicalDevice {
         )?;
 
         let common_queues = Self::find_queue_families(instance, physical_device)?;
-        debug!("Common queue families: {:?}", common_queues);
+        debug!("Using common queue families: {:?}", common_queues);
         let font_queues = front.find_queue_families(entry, instance, physical_device)?;
+        debug!("Using front queue families: {:?}", font_queues);
 
         let mut queue_family_infos = vec![];
-        queue_family_infos.extend(common_queues.as_vec());
-        queue_family_infos.extend(font_queues);
+        queue_family_infos.extend(common_queues.as_families());
+        queue_family_infos.extend(font_queues.as_families());
         QueueFamily::merge_queues(&mut queue_family_infos);
         debug!("Using queue families: {:?}", queue_family_infos);
 
@@ -293,10 +314,17 @@ impl LogicalDevice {
             .create_device(physical_device, &device_create_info, None)
             .context("Failed to create logical device")?;
 
+        let common_queues = common_queues.into_queues(&logical_device)?;
+        debug!("Acquired common queues: {:?}", common_queues);
+        let font_queues = font_queues.into_queues(&logical_device)?;
+        debug!("Acquired front queues: {:?}", font_queues);
+
+        front.set_queues(font_queues)?;
+
         Ok(Self {
             compatibilities,
             device: logical_device,
-            family_indices: common_queues,
+            queues: common_queues,
             destroyed: false,
         })
     }

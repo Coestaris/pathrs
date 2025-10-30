@@ -99,7 +99,7 @@ impl<F: Front> Tracer<F> {
         );
         let engine_name = CString::new("NoEngine")?;
         let engine_version = vk::make_api_version(0, 1, 0, 0);
-        let api_version = vk::make_api_version(0, 1, 0, 0);
+        let api_version = vk::make_api_version(0, 1, 3, 0);
 
         let app_info = vk::ApplicationInfo::default()
             .application_name(&app_name)
