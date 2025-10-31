@@ -4,9 +4,11 @@ use ash::vk::PhysicalDevice;
 use ash::{Device, Entry, Instance};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct HeadlessQueueFamilyIndices {}
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct HeadlessQueues {}
 
 impl QueueFamilyIndices for HeadlessQueueFamilyIndices {
@@ -16,11 +18,12 @@ impl QueueFamilyIndices for HeadlessQueueFamilyIndices {
         vec![]
     }
 
-    unsafe fn into_queues(self, device: &Device) -> anyhow::Result<Self::Queues> {
+    unsafe fn into_queues(self, _device: &Device) -> anyhow::Result<Self::Queues> {
         Ok(HeadlessQueues {})
     }
 }
 
+#[allow(dead_code)]
 pub struct TracerHeadlessFront {}
 
 impl TracerHeadlessFront {

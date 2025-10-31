@@ -1,5 +1,4 @@
 use crate::tracer::front::{Front, QueueFamilyIndices};
-use crate::tracer::{front, Tracer};
 use anyhow::Context;
 use ash::vk::{DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceFeatures};
 use ash::{vk, Device, Instance};

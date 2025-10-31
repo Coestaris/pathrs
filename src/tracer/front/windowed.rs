@@ -285,7 +285,7 @@ impl Front for TracerWindowedFront {
         if !self.destroyed {
             if let Some(mut runtime) = self.runtime.take() {
                 debug!("Destroying windowed runtime");
-                runtime.destroy(entry, instance, device);
+                runtime.destroy(instance, device);
             }
 
             debug!("Destroying windowed surface");

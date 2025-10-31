@@ -11,7 +11,7 @@ use crate::tracer::front::headless::TracerHeadlessFront;
 use crate::tracer::front::windowed::TracerWindowedFront;
 use crate::tracer::front::Front;
 use anyhow::Context;
-use ash::{vk, Device, Entry, Instance};
+use ash::{vk, Entry, Instance};
 use build_info::BuildInfo;
 use glam::UVec2;
 use log::{debug, info, warn};

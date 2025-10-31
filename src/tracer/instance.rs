@@ -4,7 +4,7 @@ use crate::tracer::Tracer;
 use anyhow::Context;
 use ash::{vk, Entry};
 use build_info::BuildInfo;
-use log::{debug, warn};
+use log::debug;
 use std::ffi::{c_char, CStr, CString};
 
 pub struct InstanceCompatibilities {

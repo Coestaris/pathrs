@@ -84,10 +84,10 @@ pub trait Front {
 
     unsafe fn present(
         &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
-        physical_device: vk::PhysicalDevice,
+        _entry: &ash::Entry,
+        _instance: &ash::Instance,
+        _device: &Device,
+        _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<()> {
         Ok(())
     }

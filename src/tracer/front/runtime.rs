@@ -61,7 +61,7 @@ impl Runtime {
         )?;
 
         debug!("Creating image views");
-        let image_views = Self::create_image_views(entry, instance, device, &images, format)?;
+        let image_views = Self::create_image_views(device, &images, format)?;
 
         debug!("Creating shaders");
         let entrypoint = CStr::from_bytes_with_nul(b"main\0")?;
@@ -155,12 +155,7 @@ impl Runtime {
         self.images_in_flight.clear();
     }
 
-    pub unsafe fn destroy(
-        &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
-    ) {
+    pub unsafe fn destroy(&mut self, instance: &ash::Instance, device: &Device) {
         if !self.destroyed {
             // Wait for all in-flight frames to finish
             debug!("Waiting for device to be idle before destroying runtime");
@@ -345,14 +340,13 @@ impl Runtime {
         let swapchain = swapchain_loader.create_swapchain(&create_info, None)?;
         Ok((
             swapchain,
-            Self::get_swapchain_images(entry, instance, device, swapchain)?,
+            Self::get_swapchain_images(instance, device, swapchain)?,
             formats[format].format,
             extent,
         ))
     }
 
     unsafe fn get_swapchain_images(
-        entry: &ash::Entry,
         instance: &ash::Instance,
         device: &Device,
         swapchain: vk::SwapchainKHR,
@@ -363,8 +357,6 @@ impl Runtime {
     }
 
     unsafe fn create_image_views(
-        entry: &ash::Entry,
-        instance: &ash::Instance,
         device: &Device,
         images: &[vk::Image],
         format: vk::Format,
@@ -564,7 +556,7 @@ impl Runtime {
         for _ in 0..chain_images_len {
             render_finished.push(device.create_semaphore(&sem_info, None)?);
         }
-        let mut images_in_flight = vec![vk::Fence::null(); chain_images_len];
+        let images_in_flight = vec![vk::Fence::null(); chain_images_len];
 
         Ok((
             image_available,
@@ -668,13 +660,8 @@ impl Runtime {
         self.swapchain_loader.destroy_swapchain(old_swapchain, None);
 
         // Create new swapchain image views
-        self.chain_image_views = Self::create_image_views(
-            entry,
-            instance,
-            device,
-            &self.chain_images,
-            self.chain_image_format,
-        )?;
+        self.chain_image_views =
+            Self::create_image_views(device, &self.chain_images, self.chain_image_format)?;
 
         // If format changed, recreate pipeline
         if format_changed {

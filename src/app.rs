@@ -2,7 +2,7 @@ use crate::tracer::front::windowed::TracerWindowedFront;
 use crate::tracer::Tracer;
 use build_info::BuildInfo;
 use glam::UVec2;
-use log::{debug, info};
+use log::info;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalSize, Size};
 use winit::event::{KeyEvent, WindowEvent};
