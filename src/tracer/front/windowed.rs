@@ -302,8 +302,11 @@ impl Front for TracerWindowedFront {
         Ok(())
     }
 
-    unsafe fn present(&mut self) -> anyhow::Result<()> {
-        // Presentation logic for the front-end
+    unsafe fn present(&mut self, device: &Device) -> anyhow::Result<()> {
+        if let Some(runtime) = &mut self.runtime {
+            runtime.present(device)?;
+        }
+
         Ok(())
     }
 }

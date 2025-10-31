@@ -3,7 +3,7 @@ use log::warn;
 use std::path::PathBuf;
 
 pub struct Shader {
-    module: vk::ShaderModule,
+    pub(crate) module: vk::ShaderModule,
     destroyed: bool,
 }
 

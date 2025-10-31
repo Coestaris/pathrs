@@ -5,8 +5,8 @@ use std::ffi::c_char;
 use std::fmt::Debug;
 
 pub mod headless;
-pub mod windowed;
 mod runtime;
+pub mod windowed;
 
 pub trait QueueFamilyIndices {
     type Queues: Debug;
@@ -75,13 +75,14 @@ pub trait Front {
         Ok(())
     }
 
-    unsafe fn destroy(&mut self, _entry: &ash::Entry, _instance: &ash::Instance, _device: &Device) {}
+    unsafe fn destroy(&mut self, _entry: &ash::Entry, _instance: &ash::Instance, _device: &Device) {
+    }
 
     unsafe fn resize(&mut self, _size: glam::UVec2) -> anyhow::Result<()> {
         Ok(())
     }
 
-    unsafe fn present(&mut self) -> anyhow::Result<()> {
+    unsafe fn present(&mut self, device: &Device) -> anyhow::Result<()> {
         Ok(())
     }
 }

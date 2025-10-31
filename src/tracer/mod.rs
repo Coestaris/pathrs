@@ -97,7 +97,7 @@ impl<F: Front> Tracer<F> {
 
     pub unsafe fn trace(&mut self) -> anyhow::Result<()> {
         self.front
-            .present()
+            .present(&self.logical_device.device)
             .context("Failed to present tracer front")?;
 
         Ok(())
@@ -118,7 +118,8 @@ impl<F: Front> Drop for Tracer<F> {
     fn drop(&mut self) {
         unsafe {
             debug!("Destroying front-end");
-            self.front.destroy(&self.entry, &self.instance, &self.logical_device.device);
+            self.front
+                .destroy(&self.entry, &self.instance, &self.logical_device.device);
 
             debug!("Destroying logical device");
             self.logical_device.destroy();
