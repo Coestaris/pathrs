@@ -5,10 +5,10 @@ use crate::tracer::instance::InstanceCompatibilities;
 use anyhow::Context;
 use ash::{vk, Device};
 use log::{debug, warn};
-use std::ffi::c_char;
+use std::ffi::{c_char, c_void};
 use winit::raw_window_handle::{
-    DisplayHandle, RawDisplayHandle, RawWindowHandle, WindowHandle, XlibDisplayHandle,
-    XlibWindowHandle,
+    DisplayHandle, RawDisplayHandle, RawWindowHandle, WindowHandle, WindowsDisplayHandle,
+    XlibDisplayHandle, XlibWindowHandle,
 };
 
 #[derive(Debug, Clone)]
@@ -57,6 +57,14 @@ pub enum Mode {
         window: XlibWindowHandle,
         display: XlibDisplayHandle,
     },
+    Wayland {
+        window: *mut c_void,
+        display: *mut c_void,
+    },
+    Windows {
+        hwnd: *mut c_void,
+        hinstance: *mut c_void,
+    },
 }
 
 impl Mode {
@@ -68,6 +76,17 @@ impl Mode {
                     display: xlib_display,
                 })
             }
+            (
+                RawWindowHandle::Wayland(wayland_window),
+                RawDisplayHandle::Wayland(wayland_display),
+            ) => Ok(Mode::Wayland {
+                window: wayland_window.surface.as_ptr(),
+                display: wayland_display.display.as_ptr(),
+            }),
+            (RawWindowHandle::Win32(windows_window), _) => Ok(Mode::Windows {
+                hwnd: windows_window.hwnd.get() as *mut c_void,
+                hinstance: windows_window.hinstance.unwrap().get() as *mut c_void,
+            }),
             _ => {
                 anyhow::bail!("Unsupported window/display handle combination");
             }
@@ -91,6 +110,24 @@ impl Mode {
                     window.visual_id as vk::VisualID,
                 )
             }
+            Mode::Wayland { window: _, display } => {
+                let loader = ash::khr::wayland_surface::Instance::new(entry, instance);
+                loader.get_physical_device_wayland_presentation_support(
+                    physical_device,
+                    queue_family_index,
+                    (*display as *mut vk::wl_display).as_mut().unwrap(),
+                )
+            }
+            Mode::Windows {
+                hwnd: _,
+                hinstance: _,
+            } => {
+                let loader = ash::khr::win32_surface::Instance::new(entry, instance);
+                loader.get_physical_device_win32_presentation_support(
+                    physical_device,
+                    queue_family_index,
+                )
+            }
         }
     }
 
@@ -106,6 +143,20 @@ impl Mode {
                     .window(window.window as vk::Window)
                     .dpy(display.display.unwrap().as_ptr() as *mut vk::Display);
                 Ok(loader.create_xlib_surface(&create_info, None)?)
+            }
+            Mode::Wayland { window, display } => {
+                let loader = ash::khr::wayland_surface::Instance::new(entry, instance);
+                let create_info = vk::WaylandSurfaceCreateInfoKHR::default()
+                    .surface((*window as *mut vk::wl_surface).as_mut().unwrap())
+                    .display((*display as *mut vk::wl_display).as_mut().unwrap());
+                Ok(loader.create_wayland_surface(&create_info, None)?)
+            }
+            Mode::Windows { hwnd, hinstance } => {
+                let loader = ash::khr::win32_surface::Instance::new(entry, instance);
+                let create_info = vk::Win32SurfaceCreateInfoKHR::default()
+                    .hwnd(*hwnd as isize)
+                    .hinstance(*hinstance as isize);
+                Ok(loader.create_win32_surface(&create_info, None)?)
             }
         }
     }
