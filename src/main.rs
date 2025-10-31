@@ -1,17 +1,19 @@
-use crate::app::App;
+use crate::config::TracerConfig;
+use crate::headless::headless_tracer;
 use crate::logging::setup_logging;
-use crate::tracer::config::TracerConfig;
-use crate::tracer::front::headless::TracerHeadlessFront;
-use crate::tracer::front::windowed::TracerWindowedFront;
-use crate::tracer::Tracer;
+use crate::windowed::TracerApp;
 use clap::Parser;
 use glam::UVec2;
 use log::{info, LevelFilter};
 use winit::event_loop::{ControlFlow, EventLoop};
 
-mod app;
+mod config;
+mod front;
+mod headless;
 mod logging;
 mod tracer;
+mod vk;
+mod windowed;
 
 build_info::build_info!(pub fn get_build_info);
 
@@ -49,11 +51,8 @@ fn main() -> anyhow::Result<()> {
     let viewport = UVec2::new(args.width, args.height);
     if args.headless {
         unsafe {
-            let mut tracer = Tracer::<TracerHeadlessFront>::new_headless(
-                config,
-                viewport,
-                get_build_info().clone(),
-                |output| {
+            let mut tracer =
+                headless_tracer(config, viewport, get_build_info().clone(), |output| {
                     // TODO: Save to file or process output
                     info!(
                         "Received headless output: {}x{}, {} bytes",
@@ -61,14 +60,13 @@ fn main() -> anyhow::Result<()> {
                         output.height,
                         output.rgb888.len()
                     );
-                },
-            )?;
+                })?;
             tracer.trace()?;
         }
     } else {
         let event_loop = EventLoop::new()?;
         event_loop.set_control_flow(ControlFlow::Wait);
-        let mut app = App::new(config, viewport, get_build_info().clone());
+        let mut app = TracerApp::new(config, viewport, get_build_info().clone());
         event_loop.run_app(&mut app)?;
     }
 

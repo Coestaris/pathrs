@@ -1,7 +1,7 @@
-use crate::tracer::device::{DeviceCompatibilities, QueueFamily};
-use crate::tracer::front::runtime::Runtime;
-use crate::tracer::front::{Front, QueueFamilyIndices};
-use crate::tracer::instance::InstanceCompatibilities;
+use crate::front::{Front, QueueFamilyIndices};
+use crate::vk::device::{DeviceCompatibilities, QueueFamily};
+use crate::vk::instance::InstanceCompatibilities;
+use crate::windowed::runtime::Runtime;
 use anyhow::Context;
 use ash::{vk, Device};
 use log::{debug, warn};

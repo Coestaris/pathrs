@@ -1,6 +1,6 @@
-use crate::tracer::config::TracerConfig;
-use crate::tracer::front::windowed::TracerWindowedFront;
+use crate::config::TracerConfig;
 use crate::tracer::Tracer;
+use crate::windowed::front::TracerWindowedFront;
 use build_info::BuildInfo;
 use glam::UVec2;
 use log::info;
@@ -10,21 +10,25 @@ use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::platform::x11::WindowAttributesExtX11;
+use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::{Window, WindowAttributes, WindowId};
+
+mod front;
+mod runtime;
 
 struct Context {
     window: Window,
     tracer: Tracer<TracerWindowedFront>,
 }
 
-pub struct App {
+pub struct TracerApp {
     build_info: BuildInfo,
     viewport: UVec2,
     config: TracerConfig,
     context: Option<Context>,
 }
 
-impl App {
+impl TracerApp {
     pub fn new(config: TracerConfig, initial_viewport: UVec2, bi: BuildInfo) -> Self {
         Self {
             viewport: initial_viewport,
@@ -35,7 +39,7 @@ impl App {
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler for TracerApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let title = format!(
             "{} (v{})",
@@ -56,11 +60,19 @@ impl ApplicationHandler for App {
 
         unsafe {
             let window = event_loop.create_window(attributes).unwrap();
-            let tracer = Tracer::<TracerWindowedFront>::new_windowed(
+            let tracer = Tracer::<TracerWindowedFront>::new(
                 self.config.clone(),
                 self.viewport,
                 self.build_info.clone(),
-                &window,
+                |entry, instance| {
+                    TracerWindowedFront::new(
+                        entry,
+                        instance,
+                        self.viewport,
+                        window.window_handle()?,
+                        window.display_handle()?,
+                    )
+                },
             )
             .unwrap();
             self.context = Some(Context { window, tracer });

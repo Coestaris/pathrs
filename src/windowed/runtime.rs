@@ -1,11 +1,11 @@
-use crate::tracer::front::windowed::WindowedQueues;
-use crate::tracer::shader::Shader;
 use anyhow::Context;
 use ash::{vk, Device};
 use log::{debug, warn};
 use std::ffi::CStr;
 use std::path::PathBuf;
 use std::vec;
+use crate::vk::shader::Shader;
+use crate::windowed::front::WindowedQueues;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 

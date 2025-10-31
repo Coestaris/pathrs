@@ -1,19 +1,14 @@
-use crate::tracer::device::{DeviceCompatibilities, QueueFamily};
-use crate::tracer::instance::InstanceCompatibilities;
 use ash::{vk, Device};
 use std::ffi::c_char;
 use std::fmt::Debug;
-use log::info;
-
-pub mod headless;
-mod runtime;
-pub mod windowed;
+use crate::vk::device::{DeviceCompatibilities, QueueFamily};
+use crate::vk::instance::InstanceCompatibilities;
 
 pub trait QueueFamilyIndices {
     type Queues: Debug;
 
     fn as_families(&self) -> Vec<QueueFamily>;
-    unsafe fn into_queues(self, device: &ash::Device) -> anyhow::Result<Self::Queues>;
+    unsafe fn into_queues(self, device: &Device) -> anyhow::Result<Self::Queues>;
 }
 
 pub trait Front {

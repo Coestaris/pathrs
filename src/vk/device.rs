@@ -1,8 +1,8 @@
-use crate::tracer::front::{Front, QueueFamilyIndices};
 use anyhow::Context;
 use ash::vk::{DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceFeatures};
 use ash::{vk, Device, Instance};
 use log::{debug, warn};
+use crate::front::{Front, QueueFamilyIndices};
 
 pub struct DeviceCompatibilities {}
 

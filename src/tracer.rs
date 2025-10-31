@@ -1,23 +1,13 @@
-pub mod config;
-pub mod debug_messanger;
-pub mod device;
-pub mod front;
-pub mod instance;
-mod shader;
-
-use crate::tracer::config::TracerConfig;
-use crate::tracer::debug_messanger::DebugMessenger;
-use crate::tracer::device::LogicalDevice;
-use crate::tracer::front::headless::{TracerHeadlessFront, TracerHeadlessOutput};
-use crate::tracer::front::windowed::TracerWindowedFront;
-use crate::tracer::front::Front;
 use anyhow::Context;
-use ash::{vk, Entry, Instance};
+use ash::vk::PhysicalDevice;
+use ash::{Entry, Instance};
 use build_info::BuildInfo;
 use glam::UVec2;
 use log::{debug, info, warn};
-use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use winit::window::Window;
+use crate::config::TracerConfig;
+use crate::front::Front;
+use crate::vk::debug_messanger::DebugMessenger;
+use crate::vk::device::LogicalDevice;
 
 pub struct Tracer<F: Front> {
     viewport: UVec2,
@@ -28,51 +18,20 @@ pub struct Tracer<F: Front> {
     pub entry: Entry,
     pub instance: Instance,
     pub debug_messenger: Option<DebugMessenger>,
-    pub physical_device: vk::PhysicalDevice,
+    pub physical_device: PhysicalDevice,
     pub logical_device: LogicalDevice,
 }
 
 impl<F: Front> Tracer<F> {
-    unsafe fn new_entry() -> anyhow::Result<ash::Entry> {
+    unsafe fn new_entry() -> anyhow::Result<Entry> {
         Ok(Entry::load()?)
     }
 
-    pub unsafe fn new_windowed(
+    pub(crate) unsafe fn new<D: Front>(
         config: TracerConfig,
         viewport: UVec2,
         bi: BuildInfo,
-        window: &Window,
-    ) -> anyhow::Result<Tracer<TracerWindowedFront>> {
-        Self::new(config, viewport, bi, |entry, instance| {
-            TracerWindowedFront::new(
-                entry,
-                instance,
-                viewport,
-                window.window_handle()?,
-                window.display_handle()?,
-            )
-        })
-    }
-
-    pub unsafe fn new_headless<C>(
-        config: TracerConfig,
-        viewport: UVec2,
-        bi: BuildInfo,
-        callback: C,
-    ) -> anyhow::Result<Tracer<TracerHeadlessFront>>
-    where
-        C: FnMut(TracerHeadlessOutput) + Send + 'static,
-    {
-        Self::new(config, viewport, bi, |_, _| {
-            Ok(TracerHeadlessFront::new(callback))
-        })
-    }
-
-    pub unsafe fn new<D: Front>(
-        config: TracerConfig,
-        viewport: UVec2,
-        bi: BuildInfo,
-        constructor: impl FnOnce(&ash::Entry, &ash::Instance) -> anyhow::Result<D>,
+        constructor: impl FnOnce(&Entry, &Instance) -> anyhow::Result<D>,
     ) -> anyhow::Result<Tracer<D>> {
         info!("Creating Vulkan instance");
         let entry = Self::new_entry()?;

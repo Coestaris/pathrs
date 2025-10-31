@@ -1,14 +1,9 @@
-use crate::tracer::device::QueueFamily;
-use crate::tracer::front::{Front, QueueFamilyIndices};
+use crate::front::{Front, QueueFamilyIndices};
+use crate::headless::TracerHeadlessOutput;
+use crate::vk::device::QueueFamily;
 use ash::vk::PhysicalDevice;
 use ash::{Device, Entry, Instance};
 use log::info;
-
-pub struct TracerHeadlessOutput {
-    pub width: u32,
-    pub height: u32,
-    pub rgb888: Vec<u8>,
-}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
