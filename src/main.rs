@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
         }
     } else {
         let event_loop = EventLoop::new()?;
-        event_loop.set_control_flow(ControlFlow::Poll);
+        event_loop.set_control_flow(ControlFlow::Wait);
         let mut app = App::new(viewport, get_build_info().clone());
         event_loop.run_app(&mut app)?;
     }

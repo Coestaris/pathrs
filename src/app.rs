@@ -97,12 +97,10 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
 
-            _ => {}
+            _ => {
+                // Redraw on any other event
+                context.window.request_redraw();
+            }
         }
-    }
-
-    fn about_to_wait(&mut self, _: &ActiveEventLoop) {
-        let context = self.context.as_mut().unwrap();
-        context.window.request_redraw();
     }
 }
