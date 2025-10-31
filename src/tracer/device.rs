@@ -118,23 +118,6 @@ impl LogicalDevice {
         Ok(extensions)
     }
 
-    unsafe fn get_device_layers(
-        instance: &ash::Instance,
-        device: vk::PhysicalDevice,
-    ) -> anyhow::Result<Vec<String>> {
-        let layer_properties = instance
-            .enumerate_device_layer_properties(device)
-            .context("Failed to enumerate device layer properties")?;
-        let layers = layer_properties
-            .iter()
-            .map(|layer| {
-                let layer_name = unsafe { std::ffi::CStr::from_ptr(layer.layer_name.as_ptr()) };
-                layer_name.to_string_lossy().into_owned()
-            })
-            .collect();
-        Ok(layers)
-    }
-
     unsafe fn get_required_device_extensions<F: Front>(
         _entry: &ash::Entry,
         _instance: &ash::Instance,
@@ -144,18 +127,6 @@ impl LogicalDevice {
     ) -> anyhow::Result<Vec<*const std::ffi::c_char>> {
         let mut required = vec![];
         required.extend(front.get_required_device_extensions(available, compatibilities)?);
-        Ok(required)
-    }
-
-    unsafe fn get_required_device_layers<F: Front>(
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
-        available: &Vec<String>,
-        front: &F,
-        compatibilities: &mut DeviceCompatibilities,
-    ) -> anyhow::Result<Vec<*const std::ffi::c_char>> {
-        let mut required = vec![];
-        required.extend(front.get_required_device_layers(available, compatibilities)?);
         Ok(required)
     }
 
@@ -205,12 +176,6 @@ impl LogicalDevice {
         .unwrap_or(vec![]);
         let extensions_ok = is_subset(&extensions, &required_extensions).unwrap_or(false);
 
-        let layers = Self::get_device_layers(instance, device).unwrap_or(vec![]);
-        let required_layers =
-            Self::get_required_device_layers(entry, instance, &layers, front, compatibilities)
-                .unwrap_or(vec![]);
-        let layers_ok = is_subset(&layers, &required_layers).unwrap_or(false);
-
         let front_ok = front
             .is_device_suitable(entry, instance, device)
             .unwrap_or(false);
@@ -219,11 +184,11 @@ impl LogicalDevice {
         let properties = instance.get_physical_device_properties(device);
         debug!("Device: {:?}", properties);
         debug!(
-            "extensions_ok: {}, layers_ok: {}, front_ok: {}, queues_ok: {}",
-            extensions_ok, layers_ok, front_ok, queues_ok
+            "extensions_ok: {}, front_ok: {}, queues_ok: {}",
+            extensions_ok, front_ok, queues_ok
         );
 
-        extensions_ok && layers_ok && front_ok && queues_ok
+        extensions_ok && front_ok && queues_ok
     }
 
     unsafe fn find_suitable_device<F: Front>(
@@ -272,14 +237,6 @@ impl LogicalDevice {
             front,
             &mut compatibilities,
         )?;
-        let layers = Self::get_device_layers(instance, physical_device)?;
-        let layers = Self::get_required_device_layers(
-            entry,
-            instance,
-            &layers,
-            front,
-            &mut compatibilities,
-        )?;
 
         let common_queues = Self::find_queue_families(instance, physical_device)?;
         debug!("Using common queue families: {:?}", common_queues);
@@ -305,7 +262,6 @@ impl LogicalDevice {
 
         let device_create_info = vk::DeviceCreateInfo::default()
             .enabled_extension_names(&extensions)
-            .enabled_layer_names(&layers)
             .queue_create_infos(&queue_create_infos)
             .enabled_features(&features)
             .flags(vk::DeviceCreateFlags::empty());

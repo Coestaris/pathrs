@@ -196,14 +196,6 @@ impl Front for TracerWindowedFront {
         Ok(vec![vk::KHR_SWAPCHAIN_NAME.as_ptr()])
     }
 
-    unsafe fn get_required_device_layers(
-        &self,
-        _available: &Vec<String>,
-        _compatibilities: &mut DeviceCompatibilities,
-    ) -> anyhow::Result<Vec<*const c_char>> {
-        Ok(vec![])
-    }
-
     unsafe fn is_device_suitable(
         &self,
         entry: &ash::Entry,
