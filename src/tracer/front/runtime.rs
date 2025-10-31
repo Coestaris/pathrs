@@ -611,17 +611,14 @@ impl Runtime {
         Ok(())
     }
 
-    pub unsafe fn on_suboptimal() -> anyhow::Result<()> {
+    pub unsafe fn on_suboptimal(&mut self, device: &Device) -> anyhow::Result<()> {
         debug!("Swapchain is suboptimal, needs recreation");
         unimplemented!()
     }
 
     pub unsafe fn present(&mut self, device: &Device) -> anyhow::Result<()> {
-        debug!("Presenting frame {}", self.current_frame);
-
         // Wait for the fence to be signaled
         device.wait_for_fences(&[self.in_flight_fences[self.current_frame]], true, u64::MAX)?;
-        device.reset_fences(&[self.in_flight_fences[self.current_frame]])?;
 
         // Acquire next image
         let index = match self.swapchain_loader.acquire_next_image(
@@ -632,7 +629,7 @@ impl Runtime {
         ) {
             Ok((index, false)) => index as usize,
             Ok((_, true)) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return Self::on_suboptimal();
+                return self.on_suboptimal(device);
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
@@ -644,12 +641,15 @@ impl Runtime {
 
         // Wait for the image to be available
         if self.images_in_flight[index] != vk::Fence::null() {
-            device.wait_for_fences(&[self.images_in_flight[index]], true, u64::MAX)?;
+            if self.images_in_flight[index] != self.in_flight_fences[self.current_frame] {
+                device.wait_for_fences(&[self.images_in_flight[index]], true, u64::MAX)?;
+            }
         }
         self.images_in_flight[index] = self.in_flight_fences[self.current_frame];
 
         // Record command buffer
         self.record_command_buffer(self.command_buffers[self.current_frame], device, index)?;
+        device.reset_fences(&[self.in_flight_fences[self.current_frame]])?;
 
         // Submit
         let wait_semaphores = [self.image_available_semaphores[self.current_frame]];
@@ -681,7 +681,7 @@ impl Runtime {
         {
             Ok(false) => {}
             Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return Self::on_suboptimal();
+                return self.on_suboptimal(device);
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
