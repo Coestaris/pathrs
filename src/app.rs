@@ -25,12 +25,12 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(initial_viewport: UVec2, bi: BuildInfo) -> Self {
+    pub fn new(config: TracerConfig, initial_viewport: UVec2, bi: BuildInfo) -> Self {
         Self {
             viewport: initial_viewport,
             build_info: bi,
             context: None,
-            config: Default::default(),
+            config,
         }
     }
 }

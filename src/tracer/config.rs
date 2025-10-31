@@ -1,9 +1,14 @@
+use serde::{Deserialize, Serialize, Serializer};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
-pub struct TracerConfigInner {}
+pub struct TracerConfigInner {
+    test_param_1: f32,
+    test_param_2: f32,
+    test_param_3: u32,
+}
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -11,12 +16,61 @@ pub struct TracerConfig(Rc<RefCell<TracerConfigInner>>);
 
 impl Default for TracerConfig {
     fn default() -> Self {
-        Self(Rc::new(RefCell::new(TracerConfigInner {})))
+        Self(Rc::new(RefCell::new(TracerConfigInner {
+            test_param_1: 10.0,
+            test_param_2: 10.0,
+            test_param_3: 256,
+        })))
+    }
+}
+
+impl Serialize for TracerConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.borrow().serialize(serializer)
+    }
+}
+
+impl<'a> Deserialize<'a> for TracerConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let inner = TracerConfigInner::deserialize(deserializer)?;
+        Ok(TracerConfig(Rc::new(RefCell::new(inner))))
     }
 }
 
 impl Clone for TracerConfig {
     fn clone(&self) -> Self {
         Self(self.0.clone())
+    }
+}
+
+impl TracerConfig {
+    pub fn get_test_param_1(&self) -> f32 {
+        self.0.borrow().test_param_1
+    }
+
+    pub fn get_test_param_2(&self) -> f32 {
+        self.0.borrow().test_param_2
+    }
+
+    pub fn get_test_param_3(&self) -> u32 {
+        self.0.borrow().test_param_3
+    }
+
+    pub fn set_test_param_1(&self, value: f32) {
+        self.0.borrow_mut().test_param_1 = value;
+    }
+
+    pub fn set_test_param_2(&self, value: f32) {
+        self.0.borrow_mut().test_param_2 = value;
+    }
+
+    pub fn set_test_param_3(&self, value: u32) {
+        self.0.borrow_mut().test_param_3 = value;
     }
 }

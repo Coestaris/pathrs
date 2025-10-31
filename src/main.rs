@@ -21,8 +21,14 @@ struct Arguments {
     width: u32,
     #[clap(long, default_value_t = 720)]
     height: u32,
-    #[clap(short = 'd', long)]
+    #[clap(
+        short = 'd',
+        long,
+        help = "Run in headless mode. No window will be created"
+    )]
     headless: bool,
+    #[clap(short = 'c', long, help = "Path to the config file in JSON format")]
+    config: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -31,9 +37,17 @@ fn main() -> anyhow::Result<()> {
     let args = Arguments::parse();
     info!("Starting application with args: {:?}", args);
 
+    let config = if args.config.is_some() {
+        let config_path = args.config.as_ref().unwrap();
+        info!("Loading config from file: {}", config_path);
+        serde_json::from_str(&std::fs::read_to_string(config_path)?)?
+    } else {
+        info!("No config file provided, using default config");
+        TracerConfig::default()
+    };
+
     let viewport = UVec2::new(args.width, args.height);
     if args.headless {
-        let config = TracerConfig::default();
         unsafe {
             let mut tracer = Tracer::<TracerHeadlessFront>::new_headless(
                 config,
@@ -54,7 +68,7 @@ fn main() -> anyhow::Result<()> {
     } else {
         let event_loop = EventLoop::new()?;
         event_loop.set_control_flow(ControlFlow::Wait);
-        let mut app = App::new(viewport, get_build_info().clone());
+        let mut app = App::new(config, viewport, get_build_info().clone());
         event_loop.run_app(&mut app)?;
     }
 
