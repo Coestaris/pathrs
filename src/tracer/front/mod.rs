@@ -82,7 +82,13 @@ pub trait Front {
         Ok(())
     }
 
-    unsafe fn present(&mut self, device: &Device) -> anyhow::Result<()> {
+    unsafe fn present(
+        &mut self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &Device,
+        physical_device: vk::PhysicalDevice,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }

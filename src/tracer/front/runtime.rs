@@ -135,6 +135,26 @@ impl Runtime {
         })
     }
 
+    pub unsafe fn swapchain_cleanup(&mut self, device: &Device) {
+        device.device_wait_idle().unwrap();
+
+        for fb in &self.swapchain_framebuffers {
+            device.destroy_framebuffer(*fb, None);
+        }
+        self.swapchain_framebuffers.clear();
+
+        for view in &self.chain_image_views {
+            device.destroy_image_view(*view, None);
+        }
+        self.chain_image_views.clear();
+
+        for s in &self.render_finished_semaphores {
+            device.destroy_semaphore(*s, None);
+        }
+        self.render_finished_semaphores.clear();
+        self.images_in_flight.clear();
+    }
+
     pub unsafe fn destroy(
         &mut self,
         entry: &ash::Entry,
@@ -611,12 +631,105 @@ impl Runtime {
         Ok(())
     }
 
-    pub unsafe fn on_suboptimal(&mut self, device: &Device) -> anyhow::Result<()> {
+    pub unsafe fn on_suboptimal(
+        &mut self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &Device,
+        surface: vk::SurfaceKHR,
+        physical_device: vk::PhysicalDevice,
+    ) -> anyhow::Result<()> {
         debug!("Swapchain is suboptimal, needs recreation");
-        unimplemented!()
+
+        // Cleanup old swapchain
+        self.swapchain_cleanup(device);
+
+        // Create new swapchain
+        let old_swapchain = self.swapchain;
+        let max_viewport = glam::UVec2::MAX;
+        let (swapchain, images, format, extent) = Self::create_swapchain(
+            max_viewport,
+            entry,
+            instance,
+            device,
+            surface,
+            physical_device,
+            &self.queues,
+            Some(old_swapchain),
+        )?;
+
+        let format_changed = format != self.chain_image_format;
+        self.swapchain = swapchain;
+        self.chain_images = images;
+        self.chain_image_format = format;
+        self.chain_extent = extent;
+
+        // Destroy old swapchain
+        self.swapchain_loader.destroy_swapchain(old_swapchain, None);
+
+        // Create new swapchain image views
+        self.chain_image_views = Self::create_image_views(
+            entry,
+            instance,
+            device,
+            &self.chain_images,
+            self.chain_image_format,
+        )?;
+
+        // If format changed, recreate pipeline
+        if format_changed {
+            device.destroy_pipeline(self.pipeline, None);
+            device.destroy_render_pass(self.render_pass, None);
+            device.destroy_pipeline_layout(self.pipeline_layout, None);
+
+            let entrypoint = std::ffi::CStr::from_bytes_with_nul_unchecked(b"main\0");
+            let vert_stage = vk::PipelineShaderStageCreateInfo::default()
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .module(self.vert_shader.module)
+                .name(entrypoint);
+            let frag_stage = vk::PipelineShaderStageCreateInfo::default()
+                .stage(vk::ShaderStageFlags::FRAGMENT)
+                .module(self.frag_shader.module)
+                .name(entrypoint);
+            let (pipeline_layout, render_pass, pipeline) = Self::create_pipeline(
+                device,
+                self.chain_image_format,
+                self.chain_extent,
+                vert_stage,
+                frag_stage,
+            )?;
+            self.pipeline_layout = pipeline_layout;
+            self.render_pass = render_pass;
+            self.pipeline = pipeline;
+        }
+
+        // New framebuffers
+        self.swapchain_framebuffers = Self::create_framebuffers(
+            &self.chain_image_views,
+            self.render_pass,
+            self.chain_extent,
+            device,
+        )?;
+
+        // Recreate per-image semaphores
+        let sem_info = vk::SemaphoreCreateInfo::default();
+        self.render_finished_semaphores = (0..self.chain_images.len())
+            .map(|_| device.create_semaphore(&sem_info, None))
+            .collect::<Result<_, _>>()?;
+        self.images_in_flight = vec![vk::Fence::null(); self.chain_images.len()];
+        self.current_frame = 0;
+
+        Ok(())
     }
 
-    pub unsafe fn present(&mut self, device: &Device) -> anyhow::Result<()> {
+    pub unsafe fn present(
+        &mut self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &Device,
+        surface: vk::SurfaceKHR,
+        physical_device: vk::PhysicalDevice,
+    ) -> anyhow::Result<()> {
         // Wait for the fence to be signaled
         device.wait_for_fences(&[self.in_flight_fences[self.current_frame]], true, u64::MAX)?;
 
@@ -629,7 +742,7 @@ impl Runtime {
         ) {
             Ok((index, false)) => index as usize,
             Ok((_, true)) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return self.on_suboptimal(device);
+                return self.on_suboptimal(entry, instance, device, surface, physical_device);
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
@@ -681,7 +794,7 @@ impl Runtime {
         {
             Ok(false) => {}
             Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return self.on_suboptimal(device);
+                return self.on_suboptimal(entry, instance, device, surface, physical_device);
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(

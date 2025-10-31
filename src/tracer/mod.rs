@@ -11,7 +11,7 @@ use crate::tracer::front::headless::TracerHeadlessFront;
 use crate::tracer::front::windowed::TracerWindowedFront;
 use crate::tracer::front::Front;
 use anyhow::Context;
-use ash::{Entry, Instance};
+use ash::{vk, Device, Entry, Instance};
 use build_info::BuildInfo;
 use glam::UVec2;
 use log::{debug, info, warn};
@@ -25,6 +25,7 @@ pub struct Tracer<F: Front> {
     pub entry: Entry,
     pub instance: Instance,
     pub debug_messenger: Option<DebugMessenger>,
+    pub physical_device: vk::PhysicalDevice,
     pub logical_device: LogicalDevice,
 }
 
@@ -83,7 +84,7 @@ impl<F: Front> Tracer<F> {
         };
 
         info!("Creating logical device");
-        let logical_device = LogicalDevice::new(&entry, &instance, &mut front)?;
+        let (physical_device, logical_device) = LogicalDevice::new(&entry, &instance, &mut front)?;
 
         Ok(Tracer {
             viewport,
@@ -91,13 +92,19 @@ impl<F: Front> Tracer<F> {
             entry,
             instance,
             debug_messenger,
+            physical_device,
             logical_device,
         })
     }
 
     pub unsafe fn trace(&mut self) -> anyhow::Result<()> {
         self.front
-            .present(&self.logical_device.device)
+            .present(
+                &self.entry,
+                &self.instance,
+                &self.logical_device.device,
+                self.physical_device,
+            )
             .context("Failed to present tracer front")?;
 
         Ok(())

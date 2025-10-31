@@ -302,9 +302,17 @@ impl Front for TracerWindowedFront {
         Ok(())
     }
 
-    unsafe fn present(&mut self, device: &Device) -> anyhow::Result<()> {
+    unsafe fn present(
+        &mut self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &Device,
+        physical_device: vk::PhysicalDevice,
+    ) -> anyhow::Result<()> {
         if let Some(runtime) = &mut self.runtime {
-            runtime.present(device)?;
+            runtime
+                .present(entry, instance, device, self.surface, physical_device)
+                .context("Failed to present windowed runtime")?;
         }
 
         Ok(())

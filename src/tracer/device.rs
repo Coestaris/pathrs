@@ -261,7 +261,7 @@ impl LogicalDevice {
         entry: &ash::Entry,
         instance: &Instance,
         front: &mut F,
-    ) -> anyhow::Result<Self> {
+    ) -> anyhow::Result<(PhysicalDevice, Self)> {
         let physical_device = Self::find_suitable_device(entry, instance, front)?;
 
         let mut compatibilities = DeviceCompatibilities::default();
@@ -327,12 +327,15 @@ impl LogicalDevice {
             font_queues,
         )?;
 
-        Ok(Self {
-            compatibilities,
-            device: logical_device,
-            queues: common_queues,
-            destroyed: false,
-        })
+        Ok((
+            physical_device,
+            Self {
+                compatibilities,
+                device: logical_device,
+                queues: common_queues,
+                destroyed: false,
+            },
+        ))
     }
 }
 
