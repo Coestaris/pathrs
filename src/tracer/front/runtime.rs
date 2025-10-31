@@ -7,6 +7,8 @@ use std::ffi::CStr;
 use std::path::PathBuf;
 use std::vec;
 
+const MAX_FRAMES_IN_FLIGHT: usize = 2;
+
 pub struct Runtime {
     queues: WindowedQueues,
     destroyed: bool,
@@ -22,12 +24,14 @@ pub struct Runtime {
     render_pass: vk::RenderPass,
     pipeline: vk::Pipeline,
 
-    image_available_semaphore: vk::Semaphore,
-    render_finished_semaphore: vk::Semaphore,
-    in_flight_fence: vk::Fence,
+    image_available_semaphores: Vec<vk::Semaphore>, // size = MAX_FRAMES_IN_FLIGHT
+    render_finished_semaphores: Vec<vk::Semaphore>, // size = chain_images.len()
+    in_flight_fences: Vec<vk::Fence>,               // size = MAX_FRAMES_IN_FLIGHT
+    images_in_flight: Vec<vk::Fence>,               // size = chain_images.len(),
+    current_frame: usize,
 
     command_pool: vk::CommandPool,
-    command_buffer: vk::CommandBuffer,
+    command_buffers: Vec<vk::CommandBuffer>,
     swapchain_framebuffers: Vec<vk::Framebuffer>,
 
     vert_shader: Shader,
@@ -90,13 +94,17 @@ impl Runtime {
                 .context("Failed to create framebuffers")?;
 
         debug!("Creating command pool and buffers");
-        let (command_pool, command_buffer) = Self::create_command_buffer(device, &queues)
+        let (command_pool, command_buffers) = Self::create_command_buffers(device, &queues)
             .context("Failed to create command buffer")?;
 
         debug!("Creating synchronization objects");
-        let (image_available_semaphore, render_finished_semaphore, in_flight_fence) =
-            Self::create_sync_objects(device, &queues)
-                .context("Failed to create synchronization objects")?;
+        let (
+            image_available_semaphores,
+            render_finished_semaphores,
+            in_flight_fences,
+            images_in_flight,
+        ) = Self::create_sync_objects(device, images.len())
+            .context("Failed to create synchronization objects")?;
 
         Ok(Runtime {
             queues,
@@ -110,11 +118,13 @@ impl Runtime {
             render_pass,
             pipeline,
 
-            image_available_semaphore,
-            render_finished_semaphore,
-            in_flight_fence,
+            image_available_semaphores,
+            render_finished_semaphores,
+            in_flight_fences,
+            images_in_flight,
+            current_frame: 0,
             command_pool,
-            command_buffer,
+            command_buffers,
 
             swapchain_framebuffers,
             vert_shader,
@@ -132,13 +142,23 @@ impl Runtime {
         device: &Device,
     ) {
         if !self.destroyed {
+            // Wait for all in-flight frames to finish
+            debug!("Waiting for device to be idle before destroying runtime");
+            device.device_wait_idle().unwrap();
+
             debug!("Destroying synchronization objects");
-            device.destroy_semaphore(self.image_available_semaphore, None);
-            device.destroy_semaphore(self.render_finished_semaphore, None);
-            device.destroy_fence(self.in_flight_fence, None);
+            for semaphore in &self.image_available_semaphores {
+                device.destroy_semaphore(*semaphore, None);
+            }
+            for semaphore in &self.render_finished_semaphores {
+                device.destroy_semaphore(*semaphore, None);
+            }
+            for fence in &self.in_flight_fences {
+                device.destroy_fence(*fence, None);
+            }
 
             debug!("Destroying command pool and buffers");
-            device.free_command_buffers(self.command_pool, &[self.command_buffer]);
+            device.free_command_buffers(self.command_pool, &self.command_buffers);
             device.destroy_command_pool(self.command_pool, None);
 
             debug!("Destroying swapchain framebuffers");
@@ -482,10 +502,10 @@ impl Runtime {
         Ok(framebuffers)
     }
 
-    unsafe fn create_command_buffer(
+    unsafe fn create_command_buffers(
         device: &Device,
         queues: &WindowedQueues,
-    ) -> anyhow::Result<(vk::CommandPool, vk::CommandBuffer)> {
+    ) -> anyhow::Result<(vk::CommandPool, Vec<vk::CommandBuffer>)> {
         let command_pool_info = vk::CommandPoolCreateInfo::default()
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
             .queue_family_index(queues.indices.graphics_family);
@@ -494,49 +514,60 @@ impl Runtime {
         let command_buffer_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(1);
+            .command_buffer_count(MAX_FRAMES_IN_FLIGHT as u32);
         let command_buffer = device.allocate_command_buffers(&command_buffer_info)?;
-        let command_buffer = command_buffer[0];
-
         Ok((command_pool, command_buffer))
     }
 
     unsafe fn create_sync_objects(
         device: &Device,
-        queues: &WindowedQueues,
-    ) -> anyhow::Result<(vk::Semaphore, vk::Semaphore, vk::Fence)> {
-        let image_available_semaphore_info = vk::SemaphoreCreateInfo::default();
-        let image_available_semaphore =
-            device.create_semaphore(&image_available_semaphore_info, None)?;
+        chain_images_len: usize,
+    ) -> anyhow::Result<(
+        Vec<vk::Semaphore>, // image_available_semaphores
+        Vec<vk::Semaphore>, // render_finished_semaphores (per-image)
+        Vec<vk::Fence>,     // in_flight_fences
+        Vec<vk::Fence>,     // images_in_flight
+    )> {
+        let sem_info = vk::SemaphoreCreateInfo::default();
+        let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
 
-        let render_finished_semaphore_info = vk::SemaphoreCreateInfo::default();
-        let render_finished_semaphore =
-            device.create_semaphore(&render_finished_semaphore_info, None)?;
+        // Per frame
+        let mut image_available = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
+        let mut in_flight = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
+        for _ in 0..MAX_FRAMES_IN_FLIGHT {
+            image_available.push(device.create_semaphore(&sem_info, None)?);
+            in_flight.push(device.create_fence(&fence_info, None)?);
+        }
 
-        let in_flight_fence_info =
-            vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
-        let in_flight_fence = device.create_fence(&in_flight_fence_info, None)?;
+        // Per image
+        let mut render_finished = Vec::with_capacity(chain_images_len);
+        for _ in 0..chain_images_len {
+            render_finished.push(device.create_semaphore(&sem_info, None)?);
+        }
+        let mut images_in_flight = vec![vk::Fence::null(); chain_images_len];
 
         Ok((
-            image_available_semaphore,
-            render_finished_semaphore,
-            in_flight_fence,
+            image_available,
+            render_finished,
+            in_flight,
+            images_in_flight,
         ))
     }
 
     unsafe fn record_command_buffer(
         &self,
+        command_buffer: vk::CommandBuffer,
         device: &Device,
         image_index: usize,
     ) -> anyhow::Result<()> {
-        device.reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())?;
+        device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
 
         let begin_info = vk::CommandBufferBeginInfo::default();
-        device.begin_command_buffer(self.command_buffer, &begin_info)?;
+        device.begin_command_buffer(command_buffer, &begin_info)?;
 
         let clear_values = vec![vk::ClearValue {
             color: vk::ClearColorValue {
-                float32: [0.0, 0.4, 0.0, 1.0],
+                float32: [0.0, 0.0, 0.0, 1.0],
             },
         }];
         let render_pass_info = vk::RenderPassBeginInfo::default()
@@ -548,7 +579,7 @@ impl Runtime {
             })
             .clear_values(&clear_values);
         device.cmd_begin_render_pass(
-            self.command_buffer,
+            command_buffer,
             &render_pass_info,
             vk::SubpassContents::INLINE,
         );
@@ -560,45 +591,47 @@ impl Runtime {
             .height(self.chain_extent.height as f32)
             .min_depth(0.0)
             .max_depth(1.0);
-        device.cmd_set_viewport(self.command_buffer, 0, &[viewport]);
+        device.cmd_set_viewport(command_buffer, 0, &[viewport]);
         let scissor = vk::Rect2D::default()
             .offset(vk::Offset2D { x: 0, y: 0 })
             .extent(self.chain_extent);
-        device.cmd_set_scissor(self.command_buffer, 0, &[scissor]);
+        device.cmd_set_scissor(command_buffer, 0, &[scissor]);
 
         device.cmd_bind_pipeline(
-            self.command_buffer,
+            command_buffer,
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline,
         );
 
-        device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
+        device.cmd_draw(command_buffer, 3, 1, 0, 0);
 
-        device.cmd_end_render_pass(self.command_buffer);
-        device.end_command_buffer(self.command_buffer)?;
+        device.cmd_end_render_pass(command_buffer);
+        device.end_command_buffer(command_buffer)?;
 
         Ok(())
     }
 
     pub unsafe fn on_suboptimal() -> anyhow::Result<()> {
         debug!("Swapchain is suboptimal, needs recreation");
-        Ok(())
+        unimplemented!()
     }
 
-    pub unsafe fn present(&self, device: &Device) -> anyhow::Result<()> {
+    pub unsafe fn present(&mut self, device: &Device) -> anyhow::Result<()> {
+        debug!("Presenting frame {}", self.current_frame);
+
         // Wait for the fence to be signaled
-        device.wait_for_fences(&[self.in_flight_fence], true, u64::MAX)?;
-        device.reset_fences(&[self.in_flight_fence])?;
+        device.wait_for_fences(&[self.in_flight_fences[self.current_frame]], true, u64::MAX)?;
+        device.reset_fences(&[self.in_flight_fences[self.current_frame]])?;
 
         // Acquire next image
         let index = match self.swapchain_loader.acquire_next_image(
             self.swapchain,
             u64::MAX,
-            self.image_available_semaphore,
+            self.image_available_semaphores[self.current_frame],
             vk::Fence::null(),
         ) {
-            Ok((index, false)) => index,
-            Ok((_, true)) => {
+            Ok((index, false)) => index as usize,
+            Ok((_, true)) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                 return Self::on_suboptimal();
             }
             Err(e) => {
@@ -609,13 +642,20 @@ impl Runtime {
             }
         };
 
-        self.record_command_buffer(device, index as usize)?;
+        // Wait for the image to be available
+        if self.images_in_flight[index] != vk::Fence::null() {
+            device.wait_for_fences(&[self.images_in_flight[index]], true, u64::MAX)?;
+        }
+        self.images_in_flight[index] = self.in_flight_fences[self.current_frame];
+
+        // Record command buffer
+        self.record_command_buffer(self.command_buffers[self.current_frame], device, index)?;
 
         // Submit
-        let wait_semaphores = vec![self.image_available_semaphore];
-        let wait_stages = vec![vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let signal_semaphores = vec![self.render_finished_semaphore];
-        let command_buffers = vec![self.command_buffer];
+        let wait_semaphores = [self.image_available_semaphores[self.current_frame]];
+        let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+        let signal_semaphores = [self.render_finished_semaphores[index]];
+        let command_buffers = vec![self.command_buffers[self.current_frame]];
         let submit_info = vk::SubmitInfo::default()
             .wait_semaphores(&wait_semaphores)
             .wait_dst_stage_mask(&wait_stages)
@@ -624,23 +664,34 @@ impl Runtime {
         device.queue_submit(
             self.queues.graphics_queue,
             &[submit_info],
-            self.in_flight_fence,
+            self.in_flight_fences[self.current_frame],
         )?;
 
         // Present
         let swapchains = vec![self.swapchain];
-        let image_indices = vec![index];
+        let image_indices = [index as u32];
         let present_info = vk::PresentInfoKHR::default()
             .wait_semaphores(&signal_semaphores)
             .swapchains(&swapchains)
             .image_indices(&image_indices);
-        if self
-            .swapchain_loader
-            .queue_present(self.queues.present_queue, &present_info)?
-        {
-            return Self::on_suboptimal();
-        }
 
+        match self
+            .swapchain_loader
+            .queue_present(self.queues.present_queue, &present_info)
+        {
+            Ok(false) => {}
+            Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                return Self::on_suboptimal();
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to present swapchain image: {:?}",
+                    e
+                ));
+            }
+        };
+
+        self.current_frame = (self.current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
         Ok(())
     }
 }
