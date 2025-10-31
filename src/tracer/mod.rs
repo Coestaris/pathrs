@@ -5,9 +5,10 @@ pub mod front;
 pub mod instance;
 mod shader;
 
+use crate::tracer::config::TracerConfig;
 use crate::tracer::debug_messanger::DebugMessenger;
 use crate::tracer::device::LogicalDevice;
-use crate::tracer::front::headless::TracerHeadlessFront;
+use crate::tracer::front::headless::{TracerHeadlessFront, TracerHeadlessOutput};
 use crate::tracer::front::windowed::TracerWindowedFront;
 use crate::tracer::front::Front;
 use anyhow::Context;
@@ -22,6 +23,8 @@ pub struct Tracer<F: Front> {
     viewport: UVec2,
     pub front: F,
 
+    pub config: TracerConfig,
+
     pub entry: Entry,
     pub instance: Instance,
     pub debug_messenger: Option<DebugMessenger>,
@@ -35,11 +38,12 @@ impl<F: Front> Tracer<F> {
     }
 
     pub unsafe fn new_windowed(
+        config: TracerConfig,
         viewport: UVec2,
         bi: BuildInfo,
         window: &Window,
     ) -> anyhow::Result<Tracer<TracerWindowedFront>> {
-        Self::new(viewport, bi, |entry, instance| {
+        Self::new(config, viewport, bi, |entry, instance| {
             TracerWindowedFront::new(
                 entry,
                 instance,
@@ -50,14 +54,22 @@ impl<F: Front> Tracer<F> {
         })
     }
 
-    pub unsafe fn new_headless(
+    pub unsafe fn new_headless<C>(
+        config: TracerConfig,
         viewport: UVec2,
         bi: BuildInfo,
-    ) -> anyhow::Result<Tracer<TracerHeadlessFront>> {
-        Self::new(viewport, bi, |_, _| Ok(TracerHeadlessFront::new()))
+        callback: C,
+    ) -> anyhow::Result<Tracer<TracerHeadlessFront>>
+    where
+        C: FnMut(TracerHeadlessOutput) + Send + 'static,
+    {
+        Self::new(config, viewport, bi, |_, _| {
+            Ok(TracerHeadlessFront::new(callback))
+        })
     }
 
     pub unsafe fn new<D: Front>(
+        config: TracerConfig,
         viewport: UVec2,
         bi: BuildInfo,
         constructor: impl FnOnce(&ash::Entry, &ash::Instance) -> anyhow::Result<D>,
@@ -89,6 +101,7 @@ impl<F: Front> Tracer<F> {
         Ok(Tracer {
             viewport,
             front,
+            config,
             entry,
             instance,
             debug_messenger,
@@ -97,7 +110,14 @@ impl<F: Front> Tracer<F> {
         })
     }
 
+    unsafe fn trace_inner(&mut self) -> anyhow::Result<()> {
+        info!("Tracing frame");
+        Ok(())
+    }
+
     pub unsafe fn trace(&mut self) -> anyhow::Result<()> {
+        self.trace_inner()?;
+
         self.front
             .present(
                 &self.entry,

@@ -1,3 +1,4 @@
+use crate::tracer::config::TracerConfig;
 use crate::tracer::front::windowed::TracerWindowedFront;
 use crate::tracer::Tracer;
 use build_info::BuildInfo;
@@ -19,6 +20,7 @@ struct Context {
 pub struct App {
     build_info: BuildInfo,
     viewport: UVec2,
+    config: TracerConfig,
     context: Option<Context>,
 }
 
@@ -28,6 +30,7 @@ impl App {
             viewport: initial_viewport,
             build_info: bi,
             context: None,
+            config: Default::default(),
         }
     }
 }
@@ -54,6 +57,7 @@ impl ApplicationHandler for App {
         unsafe {
             let window = event_loop.create_window(attributes).unwrap();
             let tracer = Tracer::<TracerWindowedFront>::new_windowed(
+                self.config.clone(),
                 self.viewport,
                 self.build_info.clone(),
                 &window,

@@ -14,3 +14,9 @@ impl Default for TracerConfig {
         Self(Rc::new(RefCell::new(TracerConfigInner {})))
     }
 }
+
+impl Clone for TracerConfig {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}

@@ -7,8 +7,8 @@ use ash::{vk, Device};
 use log::{debug, warn};
 use std::ffi::{c_char, c_void};
 use winit::raw_window_handle::{
-    DisplayHandle, RawDisplayHandle, RawWindowHandle, WindowHandle, WindowsDisplayHandle,
-    XlibDisplayHandle, XlibWindowHandle,
+    DisplayHandle, RawDisplayHandle, RawWindowHandle, WindowHandle, XlibDisplayHandle,
+    XlibWindowHandle,
 };
 
 #[derive(Debug, Clone)]

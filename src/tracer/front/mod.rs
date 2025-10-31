@@ -3,6 +3,7 @@ use crate::tracer::instance::InstanceCompatibilities;
 use ash::{vk, Device};
 use std::ffi::c_char;
 use std::fmt::Debug;
+use log::info;
 
 pub mod headless;
 mod runtime;

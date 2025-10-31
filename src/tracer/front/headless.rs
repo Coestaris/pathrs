@@ -2,6 +2,13 @@ use crate::tracer::device::QueueFamily;
 use crate::tracer::front::{Front, QueueFamilyIndices};
 use ash::vk::PhysicalDevice;
 use ash::{Device, Entry, Instance};
+use log::info;
+
+pub struct TracerHeadlessOutput {
+    pub width: u32,
+    pub height: u32,
+    pub rgb888: Vec<u8>,
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -24,11 +31,18 @@ impl QueueFamilyIndices for HeadlessQueueFamilyIndices {
 }
 
 #[allow(dead_code)]
-pub struct TracerHeadlessFront {}
+pub struct TracerHeadlessFront {
+    callback: Box<dyn FnMut(TracerHeadlessOutput) + Send>,
+}
 
 impl TracerHeadlessFront {
-    pub(crate) fn new() -> Self {
-        todo!()
+    pub(crate) fn new<F>(callback: F) -> Self
+    where
+        F: FnMut(TracerHeadlessOutput) + Send + 'static,
+    {
+        Self {
+            callback: Box::new(callback),
+        }
     }
 }
 
@@ -42,5 +56,24 @@ impl Front for TracerHeadlessFront {
         _physical_device: PhysicalDevice,
     ) -> anyhow::Result<HeadlessQueueFamilyIndices> {
         Ok(HeadlessQueueFamilyIndices {})
+    }
+
+    unsafe fn present(
+        &mut self,
+        _entry: &Entry,
+        _instance: &Instance,
+        _device: &Device,
+        _physical_device: PhysicalDevice,
+    ) -> anyhow::Result<()> {
+        info!("Presenting frame");
+
+        // TODO: Transfer framebuffer from the GPU to the CPU
+        (self.callback)(TracerHeadlessOutput {
+            width: 800,
+            height: 600,
+            rgb888: vec![0; 800 * 600 * 3],
+        });
+
+        Ok(())
     }
 }
