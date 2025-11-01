@@ -142,4 +142,15 @@ impl ApplicationHandler for TracerApp {
             }
         }
     }
+
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        self.context = None;
+        info!("Suspended application and destroyed window");
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(context) = self.context.as_mut() {
+            context.window.request_redraw();
+        }
+    }
 }

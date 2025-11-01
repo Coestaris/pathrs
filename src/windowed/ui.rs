@@ -4,6 +4,7 @@ impl UICompositor {
     pub(crate) fn new_context() -> egui::Context {
         let egui = egui::Context::default();
         let mut visuals = egui::Visuals::dark();
+        visuals.panel_fill = egui::Color32::TRANSPARENT;
         visuals.window_fill = egui::Color32::from_rgba_unmultiplied(
             visuals.window_fill.r(),
             visuals.window_fill.g(),
