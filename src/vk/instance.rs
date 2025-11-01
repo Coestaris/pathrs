@@ -5,7 +5,7 @@ use build_info::BuildInfo;
 use log::debug;
 use std::ffi::{c_char, CStr, CString};
 use crate::front::Front;
-use crate::vk::debug_messanger::DebugMessenger;
+use crate::vk::debug_messenger::DebugMessenger;
 
 pub struct InstanceCompatibilities {
     pub debug_utils_ext: bool,

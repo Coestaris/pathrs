@@ -4,8 +4,11 @@ use crate::vk::instance::InstanceCompatibilities;
 use crate::windowed::runtime::Runtime;
 use anyhow::Context;
 use ash::{vk, Device};
+use egui::Window;
 use log::{debug, warn};
+use std::cell::RefCell;
 use std::ffi::{c_char, c_void};
+use std::rc::Rc;
 use winit::raw_window_handle::{
     DisplayHandle, RawDisplayHandle, RawWindowHandle, WindowHandle, XlibDisplayHandle,
     XlibWindowHandle,
@@ -168,6 +171,7 @@ pub struct TracerWindowedFront {
     platform: Mode,
     runtime: Option<Runtime>,
     destroyed: bool,
+    egui: Rc<RefCell<egui_winit::State>>,
 }
 
 impl TracerWindowedFront {
@@ -177,6 +181,7 @@ impl TracerWindowedFront {
         viewport: glam::UVec2,
         window: WindowHandle,
         display: DisplayHandle,
+        egui: Rc<RefCell<egui_winit::State>>,
     ) -> anyhow::Result<Self> {
         let mode = Mode::from_handles(window, display)?;
 
@@ -186,6 +191,7 @@ impl TracerWindowedFront {
             platform: mode,
             runtime: None,
             destroyed: false,
+            egui,
         })
     }
 
@@ -318,6 +324,7 @@ impl Front for TracerWindowedFront {
                 self.surface,
                 physical_device,
                 queues,
+                self.egui.clone(),
             )
             .context("Failed to create windowed runtime")?,
         );
@@ -347,6 +354,7 @@ impl Front for TracerWindowedFront {
 
     unsafe fn present(
         &mut self,
+        w: Option<&winit::window::Window>,
         entry: &ash::Entry,
         instance: &ash::Instance,
         device: &Device,
@@ -354,7 +362,14 @@ impl Front for TracerWindowedFront {
     ) -> anyhow::Result<()> {
         if let Some(runtime) = &mut self.runtime {
             runtime
-                .present(entry, instance, device, self.surface, physical_device)
+                .present(
+                    w.unwrap(),
+                    entry,
+                    instance,
+                    device,
+                    self.surface,
+                    physical_device,
+                )
                 .context("Failed to present windowed runtime")?;
         }
 

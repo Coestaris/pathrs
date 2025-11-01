@@ -61,7 +61,7 @@ fn main() -> anyhow::Result<()> {
                         output.rgb888.len()
                     );
                 })?;
-            tracer.trace()?;
+            tracer.trace(None)?;
         }
     } else {
         let event_loop = EventLoop::new()?;

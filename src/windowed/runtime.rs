@@ -1,17 +1,27 @@
-use anyhow::Context;
-use ash::{vk, Device};
-use log::{debug, warn};
-use std::ffi::CStr;
-use std::path::PathBuf;
-use std::vec;
 use crate::vk::shader::Shader;
 use crate::windowed::front::WindowedQueues;
+use crate::windowed::ui::UICompositor;
+use anyhow::Context;
+use ash::{vk, Device};
+use egui::{ClippedPrimitive, FullOutput, TextureId, TexturesDelta};
+use log::{debug, warn};
+use std::cell::RefCell;
+use std::ffi::CStr;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::vec;
+use winit::window::Window;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct Runtime {
     queues: WindowedQueues,
     destroyed: bool,
+
+    ui_renderer: egui_ash_renderer::Renderer,
+    egui: Rc<RefCell<egui_winit::State>>,
+    compositor: UICompositor,
+    textures_to_free: Option<Vec<TextureId>>,
 
     swapchain_loader: ash::khr::swapchain::Device,
     swapchain: vk::SwapchainKHR,
@@ -47,6 +57,7 @@ impl Runtime {
         surface: vk::SurfaceKHR,
         physical_device: vk::PhysicalDevice,
         queues: WindowedQueues,
+        egui: Rc<RefCell<egui_winit::State>>,
     ) -> anyhow::Result<Self> {
         debug!("Creating swapchain");
         let (swapchain, images, format, extent) = Self::create_swapchain(
@@ -64,28 +75,32 @@ impl Runtime {
         let image_views = Self::create_image_views(device, &images, format)?;
 
         debug!("Creating shaders");
-        let entrypoint = CStr::from_bytes_with_nul(b"main\0")?;
         let project_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
         let assets_dir = project_root.join("assets");
         let vert_shader =
             Shader::new_from_file(device, assets_dir.join("shaders/triangle.vert.spv"))
                 .context("Failed to create vertex shader")?;
-        let vert_shader_stage = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vert_shader.module)
-            .name(entrypoint);
-
         let frag_shader =
             Shader::new_from_file(device, assets_dir.join("shaders/triangle.frag.spv"))
                 .context("Failed to create fragment shader")?;
-        let frag_shader_stage = vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(frag_shader.module)
-            .name(entrypoint);
 
         debug!("Creating pipeline layout and render pass");
-        let (pipeline_layout, render_pass, pipeline) =
-            Self::create_pipeline(device, format, extent, vert_shader_stage, frag_shader_stage)
+        let render_pass =
+            Self::create_render_pass(device, format).context("Failed to create render pass")?;
+
+        let entrypoint = CStr::from_bytes_with_nul(b"main\0")?;
+        let stages = vec![
+            vk::PipelineShaderStageCreateInfo::default()
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .module(vert_shader.module)
+                .name(entrypoint),
+            vk::PipelineShaderStageCreateInfo::default()
+                .stage(vk::ShaderStageFlags::FRAGMENT)
+                .module(frag_shader.module)
+                .name(entrypoint),
+        ];
+        let (pipeline_layout, pipeline) =
+            Self::create_pipeline(device, extent, render_pass, &stages)
                 .context("Failed to create pipeline")?;
 
         debug!("Creating framebuffers");
@@ -107,6 +122,8 @@ impl Runtime {
             .context("Failed to create synchronization objects")?;
 
         Ok(Runtime {
+            swapchain_loader: ash::khr::swapchain::Device::new(instance, device),
+
             queues,
             swapchain,
             chain_images: images,
@@ -131,7 +148,19 @@ impl Runtime {
             frag_shader,
 
             destroyed: false,
-            swapchain_loader: ash::khr::swapchain::Device::new(instance, device),
+            ui_renderer: egui_ash_renderer::Renderer::with_default_allocator(
+                instance,
+                physical_device,
+                device.clone(),
+                render_pass,
+                egui_ash_renderer::Options {
+                    in_flight_frames: MAX_FRAMES_IN_FLIGHT,
+                    ..Default::default()
+                },
+            )?,
+            egui,
+            compositor: UICompositor::new(),
+            textures_to_free: None,
         })
     }
 
@@ -390,13 +419,46 @@ impl Runtime {
         Ok(views)
     }
 
-    unsafe fn create_pipeline(
+    unsafe fn create_render_pass(
         device: &Device,
         format: vk::Format,
+    ) -> anyhow::Result<vk::RenderPass> {
+        let color_attachments = vec![vk::AttachmentDescription::default()
+            .format(format)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)];
+        let color_attachments_refs =
+            vec![vk::AttachmentReference::default()
+                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
+        let subpass_dependencies = vec![vk::SubpassDependency::default()
+            .src_subpass(vk::SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)];
+        let subpasses = vec![vk::SubpassDescription::default()
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+            .color_attachments(&color_attachments_refs)];
+        let render_pass_info = vk::RenderPassCreateInfo::default()
+            .attachments(&color_attachments)
+            .dependencies(&subpass_dependencies)
+            .subpasses(&subpasses);
+
+        Ok(device.create_render_pass(&render_pass_info, None)?)
+    }
+
+    unsafe fn create_pipeline(
+        device: &Device,
         extent: vk::Extent2D,
-        vertex_shader_stage: vk::PipelineShaderStageCreateInfo,
-        fragment_shader_stage: vk::PipelineShaderStageCreateInfo,
-    ) -> anyhow::Result<(vk::PipelineLayout, vk::RenderPass, vk::Pipeline)> {
+        render_pass: vk::RenderPass,
+        shader_stages: &[vk::PipelineShaderStageCreateInfo],
+    ) -> anyhow::Result<(vk::PipelineLayout, vk::Pipeline)> {
         let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::default()
             .dynamic_states(&[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default()
@@ -436,44 +498,23 @@ impl Runtime {
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
             )
-            .blend_enable(false)];
+            .blend_enable(true)
+            .src_color_blend_factor(vk::BlendFactor::ONE)
+            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .color_blend_op(vk::BlendOp::ADD)
+            .src_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_DST_ALPHA)
+            .dst_alpha_blend_factor(vk::BlendFactor::ONE)
+            .alpha_blend_op(vk::BlendOp::ADD)
+        ];
         let color_blend_info = vk::PipelineColorBlendStateCreateInfo::default()
             .logic_op_enable(false)
+            .logic_op(vk::LogicOp::COPY)
             .attachments(&color_blend_attachments);
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
         let pipline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
-        let color_attachments = vec![vk::AttachmentDescription::default()
-            .format(format)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)];
-        let color_attachments_refs =
-            vec![vk::AttachmentReference::default()
-                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
-        let subpass_dependencies = vec![vk::SubpassDependency::default()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .dst_subpass(0)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)];
-        let subpasses = vec![vk::SubpassDescription::default()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachments_refs)];
-        let render_pass_info = vk::RenderPassCreateInfo::default()
-            .attachments(&color_attachments)
-            .dependencies(&subpass_dependencies)
-            .subpasses(&subpasses);
-        let render_pass = device.create_render_pass(&render_pass_info, None)?;
-
-        let stages = vec![vertex_shader_stage, fragment_shader_stage];
         let pipeline_info = vk::GraphicsPipelineCreateInfo::default()
-            .stages(&stages)
+            .stages(&shader_stages)
             .vertex_input_state(&vertex_input_info)
             .input_assembly_state(&input_assembly_info)
             .viewport_state(&viewport_info)
@@ -489,7 +530,7 @@ impl Runtime {
             .map_err(|(_, e)| e)?
             .remove(0);
 
-        Ok((pipline_layout, render_pass, pipeline))
+        Ok((pipline_layout, pipeline))
     }
 
     unsafe fn create_framebuffers(
@@ -566,8 +607,83 @@ impl Runtime {
         ))
     }
 
+    unsafe fn record_egui_buffer(
+        &mut self,
+        w: &Window,
+        command_buffer: vk::CommandBuffer,
+        device: &Device,
+        image_index: usize,
+    ) -> anyhow::Result<()> {
+        // Free last frames textures after the previous frame is done rendering
+        if let Some(textures) = self.textures_to_free.take() {
+            self.ui_renderer
+                .free_textures(&textures)
+                .expect("Failed to free textures");
+        }
+
+        let raw_input = self.egui.borrow_mut().take_egui_input(&w);
+        let FullOutput {
+            platform_output,
+            textures_delta,
+            shapes,
+            pixels_per_point,
+            ..
+        } = self.egui.borrow_mut().egui_ctx().run(raw_input, |ctx| {
+            self.compositor.render(ctx);
+        });
+
+        if !textures_delta.free.is_empty() {
+            self.textures_to_free = Some(textures_delta.free.clone());
+        }
+
+        if !textures_delta.set.is_empty() {
+            self.ui_renderer
+                .set_textures(
+                    self.queues.graphics_queue,
+                    self.command_pool,
+                    textures_delta.set.as_slice(),
+                )
+                .expect("Failed to update texture");
+        }
+
+        self.egui
+            .borrow_mut()
+            .handle_platform_output(&w, platform_output);
+        let clipped_meshes = self
+            .egui
+            .borrow_mut()
+            .egui_ctx()
+            .tessellate(shapes, pixels_per_point);
+
+        let extent = vk::Extent2D {
+            width: self.chain_extent.width,
+            height: self.chain_extent.height,
+        };
+        Ok(self
+            .ui_renderer
+            .cmd_draw(command_buffer, extent, pixels_per_point, &clipped_meshes)?)
+    }
+
     unsafe fn record_command_buffer(
         &self,
+        command_buffer: vk::CommandBuffer,
+        device: &Device,
+        image_index: usize,
+    ) -> anyhow::Result<()> {
+        device.cmd_bind_pipeline(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline,
+        );
+
+        device.cmd_draw(command_buffer, 3, 1, 0, 0);
+
+        Ok(())
+    }
+
+    unsafe fn render(
+        &mut self,
+        w: &Window,
         command_buffer: vk::CommandBuffer,
         device: &Device,
         image_index: usize,
@@ -609,13 +725,8 @@ impl Runtime {
             .extent(self.chain_extent);
         device.cmd_set_scissor(command_buffer, 0, &[scissor]);
 
-        device.cmd_bind_pipeline(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.pipeline,
-        );
-
-        device.cmd_draw(command_buffer, 3, 1, 0, 0);
+        self.record_command_buffer(command_buffer, device, image_index)?;
+        self.record_egui_buffer(&w, command_buffer, device, image_index)?;
 
         device.cmd_end_render_pass(command_buffer);
         device.end_command_buffer(command_buffer)?;
@@ -669,22 +780,24 @@ impl Runtime {
             device.destroy_render_pass(self.render_pass, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
 
-            let entrypoint = std::ffi::CStr::from_bytes_with_nul_unchecked(b"main\0");
-            let vert_stage = vk::PipelineShaderStageCreateInfo::default()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(self.vert_shader.module)
-                .name(entrypoint);
-            let frag_stage = vk::PipelineShaderStageCreateInfo::default()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(self.frag_shader.module)
-                .name(entrypoint);
-            let (pipeline_layout, render_pass, pipeline) = Self::create_pipeline(
-                device,
-                self.chain_image_format,
-                self.chain_extent,
-                vert_stage,
-                frag_stage,
-            )?;
+            let render_pass =
+                Self::create_render_pass(device, format).context("Failed to create render pass")?;
+
+            let entrypoint = CStr::from_bytes_with_nul(b"main\0")?;
+            let stages = vec![
+                vk::PipelineShaderStageCreateInfo::default()
+                    .stage(vk::ShaderStageFlags::VERTEX)
+                    .module(self.vert_shader.module)
+                    .name(entrypoint),
+                vk::PipelineShaderStageCreateInfo::default()
+                    .stage(vk::ShaderStageFlags::FRAGMENT)
+                    .module(self.frag_shader.module)
+                    .name(entrypoint),
+            ];
+            let (pipeline_layout, pipeline) =
+                Self::create_pipeline(device, extent, render_pass, &stages)
+                    .context("Failed to create pipeline")?;
+
             self.pipeline_layout = pipeline_layout;
             self.render_pass = render_pass;
             self.pipeline = pipeline;
@@ -711,6 +824,7 @@ impl Runtime {
 
     pub unsafe fn present(
         &mut self,
+        w: &Window,
         entry: &ash::Entry,
         instance: &ash::Instance,
         device: &Device,
@@ -748,7 +862,7 @@ impl Runtime {
         self.images_in_flight[index] = self.in_flight_fences[self.current_frame];
 
         // Record command buffer
-        self.record_command_buffer(self.command_buffers[self.current_frame], device, index)?;
+        self.render(w, self.command_buffers[self.current_frame], device, index)?;
         device.reset_fences(&[self.in_flight_fences[self.current_frame]])?;
 
         // Submit

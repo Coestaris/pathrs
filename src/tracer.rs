@@ -1,13 +1,14 @@
+use crate::config::TracerConfig;
+use crate::front::Front;
+use crate::vk::debug_messenger::DebugMessenger;
+use crate::vk::device::LogicalDevice;
 use anyhow::Context;
 use ash::vk::PhysicalDevice;
 use ash::{Entry, Instance};
 use build_info::BuildInfo;
+use egui::Window;
 use glam::UVec2;
 use log::{debug, info, warn};
-use crate::config::TracerConfig;
-use crate::front::Front;
-use crate::vk::debug_messanger::DebugMessenger;
-use crate::vk::device::LogicalDevice;
 
 pub struct Tracer<F: Front> {
     viewport: UVec2,
@@ -70,15 +71,15 @@ impl<F: Front> Tracer<F> {
     }
 
     unsafe fn trace_inner(&mut self) -> anyhow::Result<()> {
-        info!("Tracing frame");
         Ok(())
     }
 
-    pub unsafe fn trace(&mut self) -> anyhow::Result<()> {
+    pub unsafe fn trace(&mut self, w: Option<&winit::window::Window>) -> anyhow::Result<()> {
         self.trace_inner()?;
 
         self.front
             .present(
+                w,
                 &self.entry,
                 &self.instance,
                 &self.logical_device.device,

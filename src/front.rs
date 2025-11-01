@@ -72,6 +72,7 @@ pub trait Front {
 
     unsafe fn present(
         &mut self,
+        _w: Option<&winit::window::Window>, // ???
         _entry: &ash::Entry,
         _instance: &ash::Instance,
         _device: &Device,

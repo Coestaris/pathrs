@@ -55,6 +55,7 @@ impl Front for TracerHeadlessFront {
 
     unsafe fn present(
         &mut self,
+        _w: Option<&winit::window::Window>,
         _entry: &Entry,
         _instance: &Instance,
         _device: &Device,
