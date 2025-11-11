@@ -1,4 +1,4 @@
-use crate::vk::quad::QuadVertex;
+use crate::vk::quad::{QuadBuffer, QuadVertex};
 use crate::vk::shader::Shader;
 use crate::windowed::front::WindowedQueues;
 use crate::windowed::ui::UICompositor;
@@ -44,8 +44,7 @@ pub struct Runtime {
     images_in_flight: Vec<vk::Fence>,               // size = chain_images.len(),
     current_frame: usize,
 
-    vertex_buffer: vk::Buffer,
-    vertex_allocation: Option<Allocation>,
+    quad: QuadBuffer,
 
     command_pool: vk::CommandPool,
     command_buffers: Vec<vk::CommandBuffer>,
@@ -116,16 +115,18 @@ impl Runtime {
             Self::create_framebuffers(&image_views, render_pass, extent, device)
                 .context("Failed to create framebuffers")?;
 
-        debug!("Creating buffers");
-        let (vertex_allocation, vertex_buffer) = {
-            let mut allocator = allocator.lock().unwrap();
-            Self::create_buffers(device, allocator.deref_mut())
-                .context("Failed to create buffers")?
-        };
-
         debug!("Creating command pool and buffers");
         let (command_pool, command_buffers) = Self::create_command_buffers(device, &queues)
             .context("Failed to create command buffer")?;
+
+        debug!("Creating quad buffers");
+        let quad_buffer = QuadBuffer::new(
+            device,
+            &mut allocator.lock().unwrap(),
+            command_pool,
+            queues.graphics_queue,
+        )
+        .context("Failed to create quad buffers")?;
 
         debug!("Creating synchronization objects");
         let (
@@ -156,8 +157,7 @@ impl Runtime {
             images_in_flight,
             current_frame: 0,
 
-            vertex_buffer,
-            vertex_allocation: Some(vertex_allocation),
+            quad: quad_buffer,
 
             command_pool,
             command_buffers,
@@ -224,10 +224,8 @@ impl Runtime {
             device.destroy_command_pool(self.command_pool, None);
 
             debug!("Destroying buffers");
-            if let Some(allocation) = self.vertex_allocation.take() {
-                self.allocator.lock().unwrap().free(allocation).unwrap();
-            }
-            device.destroy_buffer(self.vertex_buffer, None);
+            self.quad
+                .destroy(device, &mut self.allocator.lock().unwrap());
 
             debug!("Destroying swapchain framebuffers");
             for framebuffer in &self.swapchain_framebuffers {
@@ -599,50 +597,6 @@ impl Runtime {
         Ok(framebuffers)
     }
 
-    unsafe fn create_buffers(
-        device: &Device,
-        allocator: &mut Allocator,
-    ) -> anyhow::Result<(Allocation, vk::Buffer)> {
-        let vertex_buffer_info = vk::BufferCreateInfo::default()
-            .size((std::mem::size_of::<QuadVertex>() * 3) as u64)
-            .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let vertex_buffer = device.create_buffer(&vertex_buffer_info, None)?;
-
-        let vertex_mem_requirements = device.get_buffer_memory_requirements(vertex_buffer);
-        let vertex_allocation =
-            allocator.allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
-                name: "Front Quad Vertex Buffer",
-                requirements: vertex_mem_requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })?;
-
-        device.bind_buffer_memory(
-            vertex_buffer,
-            vertex_allocation.memory(),
-            vertex_allocation.offset(),
-        )?;
-
-        let vertices = [
-            QuadVertex::new([0.0, -0.5], [1.0, 0.0, 0.0]),
-            QuadVertex::new([0.5, 0.5], [0.0, 1.0, 0.0]),
-            QuadVertex::new([-0.5, 0.5], [0.0, 0.0, 1.0]),
-        ];
-        let dest = device.map_memory(
-            vertex_allocation.memory(),
-            vertex_allocation.offset(),
-            vertex_allocation.size(),
-            vk::MemoryMapFlags::empty(),
-        )? as *mut QuadVertex;
-        dest.copy_from_nonoverlapping(vertices.as_ptr(), vertices.len());
-        device.unmap_memory(vertex_allocation.memory());
-
-        Ok((vertex_allocation, vertex_buffer))
-    }
-
     unsafe fn create_command_buffers(
         device: &Device,
         queues: &WindowedQueues,
@@ -711,8 +665,6 @@ impl Runtime {
 
         let ui = self.ui.as_ptr();
 
-        (*ui).set_allocator_report(|| self.allocator.lock().unwrap().generate_report());
-
         let raw_input = (*ui).egui.take_egui_input(&w);
         let FullOutput {
             platform_output,
@@ -721,7 +673,7 @@ impl Runtime {
             pixels_per_point,
             ..
         } = (*ui).egui.egui_ctx().run(raw_input, |ctx| {
-            (*ui).render(ctx);
+            (*ui).render(ctx, self.allocator.lock().unwrap().deref_mut());
         });
 
         if !textures_delta.free.is_empty() {
@@ -762,10 +714,7 @@ impl Runtime {
             self.pipeline,
         );
 
-        let vertex_buffers = [self.vertex_buffer];
-        let offsets = [0_u64];
-        device.cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
-        device.cmd_draw(command_buffer, 3, 1, 0, 0);
+        self.quad.draw(device, command_buffer);
 
         Ok(())
     }

@@ -1,15 +1,26 @@
-use ash::vk;
+use crate::vk::buffer::create_device_local_buffer_with_data;
+use ash::{vk, Device};
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use std::mem::offset_of;
 
+const VERTICES: [QuadVertex; 4] = [
+    QuadVertex::new([-0.5, -0.5], [1.0, 0.0, 0.0]),
+    QuadVertex::new([0.5, -0.5], [0.0, 1.0, 0.0]),
+    QuadVertex::new([0.5, 0.5], [0.0, 0.0, 1.0]),
+    QuadVertex::new([-0.5, 0.5], [1.0, 1.0, 1.0]),
+];
+
+const INDICES: [u16; 6] = [0, 1, 2, 2, 3, 0];
+
 #[repr(C)]
-#[repr(packed)]
-pub struct QuadVertex {
+#[derive(Copy, Clone)]
+pub(crate) struct QuadVertex {
     pub pos: [f32; 2],
     pub color: [f32; 3],
 }
 
 impl QuadVertex {
-    pub fn new(pos: [f32; 2], color: [f32; 3]) -> Self {
+    pub const fn new(pos: [f32; 2], color: [f32; 3]) -> Self {
         Self { pos, color }
     }
 
@@ -36,5 +47,87 @@ impl QuadVertex {
                 offset: offset_of!(QuadVertex, color) as u32,
             },
         ]
+    }
+}
+
+pub struct QuadBuffer {
+    pub vertex_buffer: vk::Buffer,
+    pub vertex_buffer_allocation: Option<Allocation>,
+    pub index_buffer: vk::Buffer,
+    pub index_buffer_allocation: Option<Allocation>,
+    pub destroyed: bool,
+}
+
+impl QuadBuffer {
+    pub unsafe fn new(
+        device: &Device,
+        allocator: &mut Allocator,
+        command_pool: vk::CommandPool,
+        queue: vk::Queue,
+    ) -> anyhow::Result<Self> {
+        let (vertex_buffer, vertex_alloc) = create_device_local_buffer_with_data(
+            device,
+            allocator,
+            command_pool,
+            queue,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            &VERTICES,
+            "Quad Vertex Buffer Allocation",
+        )?;
+
+        let (index_buffer, index_alloc) = create_device_local_buffer_with_data(
+            device,
+            allocator,
+            command_pool,
+            queue,
+            vk::BufferUsageFlags::INDEX_BUFFER,
+            &INDICES,
+            "Quad Index Buffer Allocation",
+        )?;
+
+        Ok(Self {
+            vertex_buffer,
+            vertex_buffer_allocation: Some(vertex_alloc),
+            index_buffer,
+            index_buffer_allocation: Some(index_alloc),
+            destroyed: false,
+        })
+    }
+
+    pub unsafe fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {
+        if self.destroyed {
+            return;
+        }
+
+        if let Some(allocation) = self.vertex_buffer_allocation.take() {
+            allocator
+                .free(allocation)
+                .expect("Failed to free vertex buffer allocation");
+        }
+        device.destroy_buffer(self.vertex_buffer, None);
+
+        if let Some(allocation) = self.index_buffer_allocation.take() {
+            allocator
+                .free(allocation)
+                .expect("Failed to free index buffer allocation");
+        }
+        device.destroy_buffer(self.index_buffer, None);
+        self.destroyed = true;
+    }
+
+    pub unsafe fn draw(&self, device: &Device, command_buffer: vk::CommandBuffer) {
+        let vertex_buffers = [self.vertex_buffer];
+        let offsets = [0u64];
+        device.cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
+        device.cmd_bind_index_buffer(command_buffer, self.index_buffer, 0, vk::IndexType::UINT16);
+        device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 0);
+    }
+}
+
+impl Drop for QuadBuffer {
+    fn drop(&mut self) {
+        if !self.destroyed {
+            panic!("QuadBuffer was not destroyed before being dropped");
+        }
     }
 }

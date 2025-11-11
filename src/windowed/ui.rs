@@ -1,14 +1,9 @@
 use gpu_allocator::AllocatorReport;
-
-pub enum AllocatorReportRequest {
-    Empty,
-    Requested,
-    Ready(AllocatorReport),
-}
+use gpu_allocator::vulkan::AllocatorVisualizer;
 
 pub struct UICompositor {
     pub egui: egui_winit::State,
-    pub allocator_report: AllocatorReportRequest,
+    pub allocator_visualizer: AllocatorVisualizer,
     pub fps: f32,
 }
 
@@ -32,7 +27,7 @@ impl UICompositor {
     pub(crate) fn new(egui: egui_winit::State) -> Self {
         Self {
             egui,
-            allocator_report: AllocatorReportRequest::Empty,
+            allocator_visualizer: AllocatorVisualizer::new(),
             fps: 0.0,
         }
     }
@@ -41,44 +36,9 @@ impl UICompositor {
         self.fps = fps;
     }
 
-    pub fn set_allocator_report<F>(&mut self, mut set_report: F)
-    where
-        F: FnMut() -> AllocatorReport,
-    {
-        if let AllocatorReportRequest::Requested = self.allocator_report {
-            self.allocator_report = AllocatorReportRequest::Ready(set_report());
-        }
-    }
-
-    pub(crate) fn render(&mut self, ctx: &egui::Context) {
+    pub(crate) fn render(&mut self, ctx: &egui::Context, allocator: &mut gpu_allocator::vulkan::Allocator) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::Window::new("Allocator Report")
-                .resizable(true)
-                .default_width(300.0)
-                .show(ui.ctx(), |ui| {
-                    if ui.button("Refresh Report").clicked() {
-                        self.allocator_report = AllocatorReportRequest::Requested;
-                    }
-                    if let AllocatorReportRequest::Ready(report) = &self.allocator_report {
-                        ui.label(format!(
-                            "Total Allocated: {} bytes",
-                            report.total_allocated_bytes
-                        ));
-                        ui.label(format!(
-                            "Total Capacity: {} bytes",
-                            report.total_capacity_bytes
-                        ));
-                        ui.separator();
-                        for (i, alloc) in report.allocations.iter().enumerate() {
-                            ui.label(format!(
-                                "{}: {} (offset: {}, size: {})",
-                                i, alloc.name, alloc.offset, alloc.size
-                            ));
-                        }
-                    } else {
-                        ui.label("No allocator report available.");
-                    }
-                });
+            self.allocator_visualizer.render_breakdown_ui(ui, allocator);
             egui::Window::new("Tracer Controls")
                 .resizable(true)
                 .default_width(300.0)
