@@ -10,6 +10,8 @@ use log::{debug, warn};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use gpu_allocator::vulkan::Allocator;
 use winit::raw_window_handle::{
     DisplayHandle, RawDisplayHandle, RawWindowHandle, WindowHandle, XlibDisplayHandle,
     XlibWindowHandle,
@@ -315,9 +317,11 @@ impl Front for TracerWindowedFront {
         device: &Device,
         physical_device: vk::PhysicalDevice,
         queues: WindowedQueues,
+        allocator: Arc<Mutex<Allocator>>,
     ) -> anyhow::Result<()> {
         self.runtime = Some(
             Runtime::new(
+                allocator,
                 self.viewport,
                 entry,
                 instance,

@@ -6,9 +6,10 @@ use anyhow::Context;
 use ash::vk::PhysicalDevice;
 use ash::{Entry, Instance};
 use build_info::BuildInfo;
-use egui::Window;
 use glam::UVec2;
+use gpu_allocator::vulkan::Allocator;
 use log::{debug, info, warn};
+use std::sync::{Arc, Mutex};
 
 pub struct Tracer<F: Front> {
     viewport: UVec2,
@@ -21,6 +22,7 @@ pub struct Tracer<F: Front> {
     pub debug_messenger: Option<DebugMessenger>,
     pub physical_device: PhysicalDevice,
     pub logical_device: LogicalDevice,
+    pub allocator: Option<Arc<Mutex<Allocator>>>,
 }
 
 impl<F: Front> Tracer<F> {
@@ -56,7 +58,8 @@ impl<F: Front> Tracer<F> {
         };
 
         info!("Creating logical device");
-        let (physical_device, logical_device) = LogicalDevice::new(&entry, &instance, &mut front)?;
+        let (allocator, physical_device, logical_device) =
+            LogicalDevice::new(&entry, &instance, &mut front)?;
 
         Ok(Tracer {
             viewport,
@@ -67,6 +70,7 @@ impl<F: Front> Tracer<F> {
             debug_messenger,
             physical_device,
             logical_device,
+            allocator: Some(allocator),
         })
     }
 
@@ -113,6 +117,13 @@ impl<F: Front> Drop for Tracer<F> {
             debug!("Destroying front-end");
             self.front
                 .destroy(&self.entry, &self.instance, &self.logical_device.device);
+
+            debug!("Destroying allocator");
+            if let Some(allocator) = self.allocator.take() {
+                let mutex = Arc::try_unwrap(allocator).unwrap();
+                let allocator = mutex.into_inner().unwrap();
+                drop(allocator);
+            }
 
             debug!("Destroying logical device");
             self.logical_device.destroy();

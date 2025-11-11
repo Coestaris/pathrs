@@ -1,8 +1,10 @@
+use crate::front::{Front, QueueFamilyIndices};
 use anyhow::Context;
 use ash::vk::{DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceFeatures};
 use ash::{vk, Device, Instance};
+use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use log::{debug, warn};
-use crate::front::{Front, QueueFamilyIndices};
+use std::sync::{Arc, Mutex};
 
 pub struct DeviceCompatibilities {}
 
@@ -127,6 +129,7 @@ impl LogicalDevice {
     ) -> anyhow::Result<Vec<*const std::ffi::c_char>> {
         let mut required = vec![];
         required.extend(front.get_required_device_extensions(available, compatibilities)?);
+        required.push(ash::ext::buffer_device_address::NAME.as_ptr());
         Ok(required)
     }
 
@@ -212,6 +215,23 @@ impl LogicalDevice {
         Err(anyhow::anyhow!("No suitable physical device found"))
     }
 
+    unsafe fn new_allocator(
+        instance: Instance,
+        device: ash::Device,
+        physical_device: PhysicalDevice,
+    ) -> anyhow::Result<Arc<Mutex<Allocator>>> {
+        Ok(Arc::new(Mutex::new(Allocator::new(
+            &AllocatorCreateDesc {
+                instance,
+                device,
+                physical_device,
+                debug_settings: Default::default(),
+                buffer_device_address: true,
+                allocation_sizes: Default::default(),
+            },
+        )?)))
+    }
+
     pub unsafe fn destroy(&mut self) {
         if !self.destroyed {
             self.device.destroy_device(None);
@@ -225,7 +245,7 @@ impl LogicalDevice {
         entry: &ash::Entry,
         instance: &Instance,
         front: &mut F,
-    ) -> anyhow::Result<(PhysicalDevice, Self)> {
+    ) -> anyhow::Result<(Arc<Mutex<Allocator>>, PhysicalDevice, Self)> {
         let physical_device = Self::find_suitable_device(entry, instance, front)?;
 
         let mut compatibilities = DeviceCompatibilities::default();
@@ -259,7 +279,6 @@ impl LogicalDevice {
             })
             .collect::<Vec<_>>();
         let features = PhysicalDeviceFeatures::default();
-
         let device_create_info = vk::DeviceCreateInfo::default()
             .enabled_extension_names(&extensions)
             .queue_create_infos(&queue_create_infos)
@@ -274,15 +293,21 @@ impl LogicalDevice {
         let font_queues = font_queues.into_queues(&logical_device)?;
         debug!("Acquired front queues: {:?}", font_queues);
 
+        debug!("Creating allocator");
+        let allocator =
+            Self::new_allocator(instance.clone(), logical_device.clone(), physical_device)?;
+
         front.set_device(
             entry,
             instance,
             &logical_device,
             physical_device,
             font_queues,
+            allocator.clone(),
         )?;
 
         Ok((
+            allocator,
             physical_device,
             Self {
                 compatibilities,

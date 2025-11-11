@@ -3,6 +3,8 @@ use crate::vk::instance::InstanceCompatibilities;
 use ash::{vk, Device};
 use std::ffi::c_char;
 use std::fmt::Debug;
+use std::sync::{Arc, Mutex};
+use gpu_allocator::vulkan::Allocator;
 
 pub trait QueueFamilyIndices {
     type Queues: Debug;
@@ -59,6 +61,7 @@ pub trait Front {
         _device: &Device,
         _physical_device: vk::PhysicalDevice,
         _queues: <<Self as Front>::FrontQueueFamilyIndices as QueueFamilyIndices>::Queues,
+        _allocator: Arc<Mutex<Allocator>>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
