@@ -348,9 +348,21 @@ impl Front for TracerWindowedFront {
         }
     }
 
-    unsafe fn resize(&mut self, _size: glam::UVec2) -> anyhow::Result<()> {
-        // Resize logic for the front-end
-        Ok(())
+    unsafe fn resize(
+        &mut self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &Device,
+        physical_device: vk::PhysicalDevice,
+        size: glam::UVec2,
+    ) -> anyhow::Result<()> {
+        if let Some(runtime) = &mut self.runtime {
+            runtime
+                .resize(entry, instance, device, self.surface, physical_device, size)
+                .context("Failed to resize windowed runtime")
+        } else {
+            Ok(())
+        }
     }
 
     unsafe fn present(
@@ -371,10 +383,10 @@ impl Front for TracerWindowedFront {
                     self.surface,
                     physical_device,
                 )
-                .context("Failed to present windowed runtime")?;
+                .context("Failed to present windowed runtime")
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 }
 

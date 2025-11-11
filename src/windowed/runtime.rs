@@ -60,7 +60,7 @@ impl Runtime {
     ) -> anyhow::Result<Self> {
         debug!("Creating swapchain");
         let (swapchain, images, format, extent) = Self::create_swapchain(
-            viewport,
+            Some(viewport),
             entry,
             instance,
             device,
@@ -306,7 +306,7 @@ impl Runtime {
     }
 
     unsafe fn create_swapchain(
-        viewport: glam::UVec2,
+        viewport: Option<glam::UVec2>,
         entry: &ash::Entry,
         instance: &ash::Instance,
         device: &Device,
@@ -321,10 +321,16 @@ impl Runtime {
         // Fetch information about the surface
         let capabilities =
             surface_loader.get_physical_device_surface_capabilities(physical_device, surface)?;
+        println!("Surface capabilities: {:?}", capabilities);
         let formats =
             surface_loader.get_physical_device_surface_formats(physical_device, surface)?;
         let present_modes =
             surface_loader.get_physical_device_surface_present_modes(physical_device, surface)?;
+
+        let viewport = viewport.unwrap_or(glam::UVec2::new(
+            capabilities.current_extent.width,
+            capabilities.current_extent.height,
+        ));
 
         // Select the best format and present mode
         let format =
@@ -686,6 +692,27 @@ impl Runtime {
         Ok(())
     }
 
+    pub(crate) unsafe fn resize(
+        &mut self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &Device,
+        surface: vk::SurfaceKHR,
+        physical_device: vk::PhysicalDevice,
+        viewport: glam::UVec2,
+    ) -> anyhow::Result<()> {
+        if self.chain_extent.width != viewport.x || self.chain_extent.height != viewport.y {
+            debug!(
+                "Resizing swapchain from {:?} to {:?}",
+                self.chain_extent, viewport
+            );
+
+            return self.on_suboptimal(entry, instance, device, surface, physical_device, None);
+        }
+
+        Ok(())
+    }
+
     unsafe fn render(
         &mut self,
         w: &Window,
@@ -746,6 +773,7 @@ impl Runtime {
         device: &Device,
         surface: vk::SurfaceKHR,
         physical_device: vk::PhysicalDevice,
+        viewport: Option<glam::UVec2>,
     ) -> anyhow::Result<()> {
         debug!("Swapchain is suboptimal, needs recreation");
 
@@ -754,9 +782,8 @@ impl Runtime {
 
         // Create new swapchain
         let old_swapchain = self.swapchain;
-        let max_viewport = glam::UVec2::MAX;
         let (swapchain, images, format, extent) = Self::create_swapchain(
-            max_viewport,
+            viewport,
             entry,
             instance,
             device,
@@ -848,7 +875,7 @@ impl Runtime {
         ) {
             Ok((index, false)) => index as usize,
             Ok((_, true)) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return self.on_suboptimal(entry, instance, device, surface, physical_device);
+                return self.on_suboptimal(entry, instance, device, surface, physical_device, None);
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
@@ -900,7 +927,7 @@ impl Runtime {
         {
             Ok(false) => {}
             Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return self.on_suboptimal(entry, instance, device, surface, physical_device);
+                return self.on_suboptimal(entry, instance, device, surface, physical_device, None);
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(

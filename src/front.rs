@@ -1,8 +1,8 @@
+use crate::vk::device::{DeviceCompatibilities, QueueFamily};
+use crate::vk::instance::InstanceCompatibilities;
 use ash::{vk, Device};
 use std::ffi::c_char;
 use std::fmt::Debug;
-use crate::vk::device::{DeviceCompatibilities, QueueFamily};
-use crate::vk::instance::InstanceCompatibilities;
 
 pub trait QueueFamilyIndices {
     type Queues: Debug;
@@ -66,7 +66,14 @@ pub trait Front {
     unsafe fn destroy(&mut self, _entry: &ash::Entry, _instance: &ash::Instance, _device: &Device) {
     }
 
-    unsafe fn resize(&mut self, _size: glam::UVec2) -> anyhow::Result<()> {
+    unsafe fn resize(
+        &mut self,
+        _entry: &ash::Entry,
+        _instance: &ash::Instance,
+        _device: &Device,
+        _physical_device: vk::PhysicalDevice,
+        _size: glam::UVec2,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 

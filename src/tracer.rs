@@ -94,7 +94,13 @@ impl<F: Front> Tracer<F> {
         self.viewport = size;
 
         self.front
-            .resize(size)
+            .resize(
+                &self.entry,
+                &self.instance,
+                &self.logical_device.device,
+                self.physical_device,
+                size,
+            )
             .with_context(|| format!("Failed to resize tracer front to {:?}", size))?;
 
         Ok(())
