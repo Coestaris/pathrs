@@ -19,8 +19,7 @@ pub struct Runtime {
     destroyed: bool,
 
     ui_renderer: egui_ash_renderer::Renderer,
-    egui: Rc<RefCell<egui_winit::State>>,
-    compositor: UICompositor,
+    ui: Rc<RefCell<UICompositor>>,
     textures_to_free: Option<Vec<TextureId>>,
 
     swapchain_loader: ash::khr::swapchain::Device,
@@ -57,7 +56,7 @@ impl Runtime {
         surface: vk::SurfaceKHR,
         physical_device: vk::PhysicalDevice,
         queues: WindowedQueues,
-        egui: Rc<RefCell<egui_winit::State>>,
+        ui: Rc<RefCell<UICompositor>>,
     ) -> anyhow::Result<Self> {
         debug!("Creating swapchain");
         let (swapchain, images, format, extent) = Self::create_swapchain(
@@ -158,8 +157,7 @@ impl Runtime {
                     ..Default::default()
                 },
             )?,
-            egui,
-            compositor: UICompositor::new(),
+            ui,
             textures_to_free: None,
         })
     }
@@ -265,13 +263,26 @@ impl Runtime {
     }
 
     fn choose_present_mode(modes: &[vk::PresentModeKHR]) -> Option<usize> {
+        let mut best_mode = None;
+        let mut best_score = 0;
+
         // Support only FIFO for now
         for (i, mode) in modes.iter().enumerate() {
-            if *mode == vk::PresentModeKHR::FIFO {
-                return Some(i);
+            let score = match *mode {
+                vk::PresentModeKHR::IMMEDIATE => 10,
+                vk::PresentModeKHR::MAILBOX => 8,
+                vk::PresentModeKHR::FIFO => 6,
+                vk::PresentModeKHR::FIFO_RELAXED => 5,
+                _ => 0,
+            };
+
+            if score > best_score {
+                best_score = score;
+                best_mode = Some(i);
             }
         }
-        None
+
+        best_mode
     }
 
     fn choose_extent(
@@ -504,8 +515,7 @@ impl Runtime {
             .color_blend_op(vk::BlendOp::ADD)
             .src_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_DST_ALPHA)
             .dst_alpha_blend_factor(vk::BlendFactor::ONE)
-            .alpha_blend_op(vk::BlendOp::ADD)
-        ];
+            .alpha_blend_op(vk::BlendOp::ADD)];
         let color_blend_info = vk::PipelineColorBlendStateCreateInfo::default()
             .logic_op_enable(false)
             .logic_op(vk::LogicOp::COPY)
@@ -621,15 +631,16 @@ impl Runtime {
                 .expect("Failed to free textures");
         }
 
-        let raw_input = self.egui.borrow_mut().take_egui_input(&w);
+        let ui = self.ui.as_ptr();
+        let raw_input = (*ui).egui.take_egui_input(&w);
         let FullOutput {
             platform_output,
             textures_delta,
             shapes,
             pixels_per_point,
             ..
-        } = self.egui.borrow_mut().egui_ctx().run(raw_input, |ctx| {
-            self.compositor.render(ctx);
+        } = (*ui).egui.egui_ctx().run(raw_input, |ctx| {
+            (*ui).render(ctx);
         });
 
         if !textures_delta.free.is_empty() {
@@ -646,14 +657,8 @@ impl Runtime {
                 .expect("Failed to update texture");
         }
 
-        self.egui
-            .borrow_mut()
-            .handle_platform_output(&w, platform_output);
-        let clipped_meshes = self
-            .egui
-            .borrow_mut()
-            .egui_ctx()
-            .tessellate(shapes, pixels_per_point);
+        (*ui).egui.handle_platform_output(&w, platform_output);
+        let clipped_meshes = (*ui).egui.egui_ctx().tessellate(shapes, pixels_per_point);
 
         let extent = vk::Extent2D {
             width: self.chain_extent.width,

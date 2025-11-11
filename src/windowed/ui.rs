@@ -1,4 +1,10 @@
-pub struct UICompositor {}
+use std::cell::RefCell;
+use std::rc::Rc;
+
+pub struct UICompositor {
+    pub egui: egui_winit::State,
+    pub fps: f32,
+}
 
 impl UICompositor {
     pub(crate) fn new_context() -> egui::Context {
@@ -17,8 +23,12 @@ impl UICompositor {
         egui
     }
 
-    pub(crate) fn new() -> Self {
-        Self {}
+    pub(crate) fn new(egui: egui_winit::State) -> Self {
+        Self { egui, fps: 0.0 }
+    }
+
+    pub fn set_fps(&mut self, fps: f32) {
+        self.fps = fps;
     }
 
     pub(crate) fn render(&mut self, ctx: &egui::Context) {
@@ -27,6 +37,7 @@ impl UICompositor {
                 .resizable(true)
                 .default_width(300.0)
                 .show(ui.ctx(), |ui| {
+                    ui.label(format!("FPS: {:.2}", self.fps));
                     ui.label("Tracer Controls go here");
                 });
         });

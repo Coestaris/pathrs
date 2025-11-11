@@ -2,6 +2,7 @@ use crate::front::{Front, QueueFamilyIndices};
 use crate::vk::device::{DeviceCompatibilities, QueueFamily};
 use crate::vk::instance::InstanceCompatibilities;
 use crate::windowed::runtime::Runtime;
+use crate::windowed::ui::UICompositor;
 use anyhow::Context;
 use ash::{vk, Device};
 use egui::Window;
@@ -171,7 +172,7 @@ pub struct TracerWindowedFront {
     platform: Mode,
     runtime: Option<Runtime>,
     destroyed: bool,
-    egui: Rc<RefCell<egui_winit::State>>,
+    ui: Rc<RefCell<UICompositor>>,
 }
 
 impl TracerWindowedFront {
@@ -181,7 +182,7 @@ impl TracerWindowedFront {
         viewport: glam::UVec2,
         window: WindowHandle,
         display: DisplayHandle,
-        egui: Rc<RefCell<egui_winit::State>>,
+        ui: Rc<RefCell<UICompositor>>,
     ) -> anyhow::Result<Self> {
         let mode = Mode::from_handles(window, display)?;
 
@@ -191,7 +192,7 @@ impl TracerWindowedFront {
             platform: mode,
             runtime: None,
             destroyed: false,
-            egui,
+            ui,
         })
     }
 
@@ -324,7 +325,7 @@ impl Front for TracerWindowedFront {
                 self.surface,
                 physical_device,
                 queues,
-                self.egui.clone(),
+                self.ui.clone(),
             )
             .context("Failed to create windowed runtime")?,
         );

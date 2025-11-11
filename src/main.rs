@@ -14,6 +14,7 @@ mod logging;
 mod tracer;
 mod vk;
 mod windowed;
+mod fps;
 
 build_info::build_info!(pub fn get_build_info);
 

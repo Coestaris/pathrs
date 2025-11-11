@@ -1,4 +1,5 @@
 use crate::config::TracerConfig;
+use crate::fps::FPS;
 use crate::tracer::Tracer;
 use crate::windowed::front::TracerWindowedFront;
 use crate::windowed::ui::UICompositor;
@@ -21,9 +22,10 @@ mod runtime;
 mod ui;
 
 struct Context {
+    fps: FPS,
     window: Window,
     tracer: Tracer<TracerWindowedFront>,
-    egui: Rc<RefCell<egui_winit::State>>,
+    ui: Rc<RefCell<UICompositor>>,
 }
 
 pub struct TracerApp {
@@ -72,7 +74,7 @@ impl ApplicationHandler for TracerApp {
         let context = UICompositor::new_context();
         let id = context.viewport_id();
         let state = egui_winit::State::new(context, id, &window, None, None, None);
-        let egui = Rc::new(RefCell::new(state));
+        let ui = Rc::new(RefCell::new(UICompositor::new(state)));
 
         let tracer = unsafe {
             Tracer::<TracerWindowedFront>::new(
@@ -86,7 +88,7 @@ impl ApplicationHandler for TracerApp {
                         self.viewport,
                         window.window_handle()?,
                         window.display_handle()?,
-                        egui.clone(),
+                        ui.clone(),
                     )
                 },
             )
@@ -94,9 +96,10 @@ impl ApplicationHandler for TracerApp {
         };
 
         self.context = Some(Context {
+            fps: FPS::new(),
             window,
             tracer,
-            egui,
+            ui,
         });
 
         info!("Initialized windowed tracer");
@@ -106,8 +109,9 @@ impl ApplicationHandler for TracerApp {
         let context = self.context.as_mut().unwrap();
 
         let _ = context
-            .egui
+            .ui
             .borrow_mut()
+            .egui
             .on_window_event(&context.window, &event);
 
         match event {
@@ -118,6 +122,9 @@ impl ApplicationHandler for TracerApp {
             },
             WindowEvent::RedrawRequested => unsafe {
                 context.tracer.trace(Some(&context.window)).unwrap();
+
+                let fps = context.fps.update();
+                context.ui.borrow_mut().set_fps(fps);
             },
             WindowEvent::CloseRequested => {
                 info!("Close requested, exiting event loop");
@@ -143,14 +150,14 @@ impl ApplicationHandler for TracerApp {
         }
     }
 
-    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        self.context = None;
-        info!("Suspended application and destroyed window");
-    }
-
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(context) = self.context.as_mut() {
             context.window.request_redraw();
         }
+    }
+
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        self.context = None;
+        info!("Suspended application and destroyed window");
     }
 }
