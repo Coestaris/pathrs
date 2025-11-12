@@ -50,27 +50,5 @@ impl Clone for TracerConfig {
 }
 
 impl TracerConfig {
-    pub fn get_test_param_1(&self) -> f32 {
-        self.0.borrow().test_param_1
-    }
 
-    pub fn get_test_param_2(&self) -> f32 {
-        self.0.borrow().test_param_2
-    }
-
-    pub fn get_test_param_3(&self) -> u32 {
-        self.0.borrow().test_param_3
-    }
-
-    pub fn set_test_param_1(&self, value: f32) {
-        self.0.borrow_mut().test_param_1 = value;
-    }
-
-    pub fn set_test_param_2(&self, value: f32) {
-        self.0.borrow_mut().test_param_2 = value;
-    }
-
-    pub fn set_test_param_3(&self, value: u32) {
-        self.0.borrow_mut().test_param_3 = value;
-    }
 }

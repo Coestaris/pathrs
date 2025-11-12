@@ -5,13 +5,12 @@ use crate::windowed::runtime::Runtime;
 use crate::windowed::ui::UICompositor;
 use anyhow::Context;
 use ash::{vk, Device};
-use egui::Window;
+use gpu_allocator::vulkan::Allocator;
 use log::{debug, warn};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use gpu_allocator::vulkan::Allocator;
 use winit::raw_window_handle::{
     DisplayHandle, RawDisplayHandle, RawWindowHandle, WindowHandle, XlibDisplayHandle,
     XlibWindowHandle,

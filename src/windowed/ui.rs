@@ -1,5 +1,4 @@
 use gpu_allocator::vulkan::AllocatorVisualizer;
-use gpu_allocator::AllocatorReport;
 
 pub struct UICompositor {
     pub egui: egui_winit::State,

@@ -1,13 +1,14 @@
 use crate::vk::buffer::create_device_local_buffer_with_data;
 use ash::{vk, Device};
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
+use gpu_allocator::vulkan::{Allocation, Allocator};
 use std::mem::offset_of;
 
+// Fullscreen quad vertices
 const VERTICES: [QuadVertex; 4] = [
-    QuadVertex::new([-0.5, -0.5], [1.0, 0.0, 0.0]),
-    QuadVertex::new([0.5, -0.5], [0.0, 1.0, 0.0]),
-    QuadVertex::new([0.5, 0.5], [0.0, 0.0, 1.0]),
-    QuadVertex::new([-0.5, 0.5], [1.0, 1.0, 1.0]),
+    QuadVertex::new([-1.0, -1.0], [0.0, 0.0]),
+    QuadVertex::new([1.0, -1.0], [1.0, 0.0]),
+    QuadVertex::new([1.0, 1.0], [1.0, 1.0]),
+    QuadVertex::new([-1.0, 1.0], [0.0, 1.0]),
 ];
 
 const INDICES: [u16; 6] = [0, 1, 2, 2, 3, 0];
@@ -16,12 +17,12 @@ const INDICES: [u16; 6] = [0, 1, 2, 2, 3, 0];
 #[derive(Copy, Clone)]
 pub(crate) struct QuadVertex {
     pub pos: [f32; 2],
-    pub color: [f32; 3],
+    pub uv: [f32; 2],
 }
 
 impl QuadVertex {
-    pub const fn new(pos: [f32; 2], color: [f32; 3]) -> Self {
-        Self { pos, color }
+    pub const fn new(pos: [f32; 2], uv: [f32; 2]) -> Self {
+        Self { pos, uv }
     }
 
     pub fn get_binding_description() -> vk::VertexInputBindingDescription {
@@ -43,8 +44,8 @@ impl QuadVertex {
             vk::VertexInputAttributeDescription {
                 binding: 0,
                 location: 1,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(QuadVertex, color) as u32,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: offset_of!(QuadVertex, uv) as u32,
             },
         ]
     }

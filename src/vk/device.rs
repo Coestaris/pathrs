@@ -22,7 +22,6 @@ pub struct CommonQueueFamilyIndices {
 
 #[derive(Debug)]
 pub struct CommonQueues {
-    pub indices: CommonQueueFamilyIndices,
     pub graphics_queue: vk::Queue,
     pub compute_queue: vk::Queue,
 }
@@ -49,7 +48,6 @@ impl QueueFamilyIndices for CommonQueueFamilyIndices {
         let compute_queue = device.get_device_queue(self.compute_family, 0);
 
         Ok(CommonQueues {
-            indices: self,
             graphics_queue,
             compute_queue,
         })
@@ -82,7 +80,6 @@ impl QueueFamily {
 }
 
 pub struct LogicalDevice {
-    compatibilities: DeviceCompatibilities,
     pub(crate) device: Device,
     queues: CommonQueues,
     destroyed: bool,
@@ -310,7 +307,6 @@ impl LogicalDevice {
             allocator,
             physical_device,
             Self {
-                compatibilities,
                 device: logical_device,
                 queues: common_queues,
                 destroyed: false,

@@ -4,8 +4,8 @@ use crate::windowed::front::WindowedQueues;
 use crate::windowed::ui::UICompositor;
 use anyhow::Context;
 use ash::{vk, Device};
-use egui::{ClippedPrimitive, FullOutput, TextureId, TexturesDelta};
-use gpu_allocator::vulkan::{Allocation, Allocator};
+use egui::{FullOutput, TextureId};
+use gpu_allocator::vulkan::Allocator;
 use log::{debug, warn};
 use std::cell::RefCell;
 use std::ffi::CStr;
@@ -653,8 +653,6 @@ impl Runtime {
         &mut self,
         w: &Window,
         command_buffer: vk::CommandBuffer,
-        device: &Device,
-        image_index: usize,
     ) -> anyhow::Result<()> {
         // Free last frames textures after the previous frame is done rendering
         if let Some(textures) = self.textures_to_free.take() {
@@ -706,7 +704,6 @@ impl Runtime {
         &self,
         command_buffer: vk::CommandBuffer,
         device: &Device,
-        image_index: usize,
     ) -> anyhow::Result<()> {
         device.cmd_bind_pipeline(
             command_buffer,
@@ -784,8 +781,8 @@ impl Runtime {
             .extent(self.chain_extent);
         device.cmd_set_scissor(command_buffer, 0, &[scissor]);
 
-        self.record_command_buffer(command_buffer, device, image_index)?;
-        self.record_egui_buffer(&w, command_buffer, device, image_index)?;
+        self.record_command_buffer(command_buffer, device)?;
+        self.record_egui_buffer(&w, command_buffer)?;
 
         device.cmd_end_render_pass(command_buffer);
         device.end_command_buffer(command_buffer)?;

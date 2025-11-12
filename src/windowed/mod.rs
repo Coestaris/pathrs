@@ -4,7 +4,6 @@ use crate::tracer::Tracer;
 use crate::windowed::front::TracerWindowedFront;
 use crate::windowed::ui::UICompositor;
 use build_info::BuildInfo;
-use egui::{ClippedPrimitive, FullOutput, TexturesDelta};
 use glam::UVec2;
 use log::info;
 use std::cell::RefCell;
@@ -171,7 +170,7 @@ impl ApplicationHandler for TracerApp {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, _: &ActiveEventLoop) {
         if let Some(context) = self.context.as_mut() {
             context.window.request_redraw();
         }
