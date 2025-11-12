@@ -1,5 +1,5 @@
 use crate::config::TracerConfig;
-use crate::fps::FPS;
+use crate::fps::{FPSResult, FPS};
 use crate::tracer::Tracer;
 use crate::windowed::front::TracerWindowedFront;
 use crate::windowed::ui::UICompositor;
@@ -28,6 +28,24 @@ struct Context {
     ui: Rc<RefCell<UICompositor>>,
 }
 
+impl Context {
+    fn title(build_info: &BuildInfo, fps: Option<f32>) -> String {
+        match fps {
+            Some(fps) => format!(
+                "{} (v{}) - {:.2} FPS",
+                build_info.crate_info.name,
+                build_info.crate_info.version.to_string(),
+                fps
+            ),
+            None => format!(
+                "{} (v{})",
+                build_info.crate_info.name,
+                build_info.crate_info.version.to_string()
+            ),
+        }
+    }
+}
+
 pub struct TracerApp {
     build_info: BuildInfo,
     viewport: UVec2,
@@ -48,14 +66,9 @@ impl TracerApp {
 
 impl ApplicationHandler for TracerApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let title = format!(
-            "{} (v{})",
-            self.build_info.crate_info.name,
-            self.build_info.crate_info.version.to_string()
-        );
         let size = Size::Physical(PhysicalSize::new(self.viewport.x, self.viewport.y));
-
-        let attributes = WindowAttributes::default().with_title(title);
+        let attributes =
+            WindowAttributes::default().with_title(Context::title(&self.build_info, None));
 
         #[cfg(target_os = "linux")]
         let attributes = {
@@ -123,8 +136,16 @@ impl ApplicationHandler for TracerApp {
             WindowEvent::RedrawRequested => unsafe {
                 context.tracer.trace(Some(&context.window)).unwrap();
 
-                let fps = context.fps.update();
-                context.ui.borrow_mut().set_fps(fps);
+                match context.fps.update() {
+                    FPSResult::Updated(fps) => {
+                        context
+                            .window
+                            .set_title(&Context::title(&self.build_info, Some(fps)));
+                    }
+                    FPSResult::Cached(fps) => {
+                        context.ui.borrow_mut().set_fps(fps);
+                    }
+                }
             },
             WindowEvent::CloseRequested => {
                 info!("Close requested, exiting event loop");

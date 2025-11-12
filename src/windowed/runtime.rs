@@ -728,14 +728,14 @@ impl Runtime {
         physical_device: vk::PhysicalDevice,
         viewport: glam::UVec2,
     ) -> anyhow::Result<()> {
-        // if self.chain_extent.width != viewport.x || self.chain_extent.height != viewport.y {
-        //     debug!(
-        //         "Resizing swapchain from {:?} to {:?}",
-        //         self.chain_extent, viewport
-        //     );
-        //
-        //     return self.on_suboptimal(entry, instance, device, surface, physical_device, None);
-        // }
+        if self.chain_extent.width != viewport.x || self.chain_extent.height != viewport.y {
+            debug!(
+                "Resizing swapchain from {:?} to {:?}",
+                self.chain_extent, viewport
+            );
+
+            return self.on_suboptimal(entry, instance, device, surface, physical_device, None);
+        }
 
         Ok(())
     }

@@ -1,9 +1,11 @@
-use gpu_allocator::AllocatorReport;
 use gpu_allocator::vulkan::AllocatorVisualizer;
+use gpu_allocator::AllocatorReport;
 
 pub struct UICompositor {
     pub egui: egui_winit::State,
     pub allocator_visualizer: AllocatorVisualizer,
+    pub allocator_breakdown_open: bool,
+    pub tracer_controls_open: bool,
     pub fps: f32,
 }
 
@@ -28,6 +30,8 @@ impl UICompositor {
         Self {
             egui,
             allocator_visualizer: AllocatorVisualizer::new(),
+            allocator_breakdown_open: true,
+            tracer_controls_open: true,
             fps: 0.0,
         }
     }
@@ -36,16 +40,26 @@ impl UICompositor {
         self.fps = fps;
     }
 
-    pub(crate) fn render(&mut self, ctx: &egui::Context, allocator: &mut gpu_allocator::vulkan::Allocator) {
+    pub(crate) fn render(
+        &mut self,
+        ctx: &egui::Context,
+        allocator: &mut gpu_allocator::vulkan::Allocator,
+    ) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.allocator_visualizer.render_breakdown_ui(ui, allocator);
             egui::Window::new("Tracer Controls")
                 .resizable(true)
                 .default_width(300.0)
+                .open(&mut self.tracer_controls_open)
                 .show(ui.ctx(), |ui| {
                     ui.label(format!("FPS: {:.2}", self.fps));
                     ui.label("Tracer Controls go here");
                 });
+
+            self.allocator_visualizer.render_breakdown_window(
+                ctx,
+                allocator,
+                &mut self.allocator_breakdown_open,
+            );
         });
     }
 }
