@@ -3,8 +3,6 @@ use gpu_allocator::vulkan::AllocatorVisualizer;
 pub struct UICompositor {
     pub egui: egui_winit::State,
     pub allocator_visualizer: AllocatorVisualizer,
-    pub allocator_breakdown_open: bool,
-    pub tracer_controls_open: bool,
     pub fps: f32,
 }
 
@@ -12,13 +10,13 @@ impl UICompositor {
     pub(crate) fn new_context() -> egui::Context {
         let egui = egui::Context::default();
         let mut visuals = egui::Visuals::dark();
-        visuals.panel_fill = egui::Color32::TRANSPARENT;
         visuals.window_fill = egui::Color32::from_rgba_unmultiplied(
             visuals.window_fill.r(),
             visuals.window_fill.g(),
             visuals.window_fill.b(),
             200,
         );
+        visuals.panel_fill = visuals.window_fill;
 
         egui.set_visuals(visuals);
         egui.set_zoom_factor(1.1);
@@ -29,8 +27,6 @@ impl UICompositor {
         Self {
             egui,
             allocator_visualizer: AllocatorVisualizer::new(),
-            allocator_breakdown_open: true,
-            tracer_controls_open: true,
             fps: 0.0,
         }
     }
@@ -44,21 +40,16 @@ impl UICompositor {
         ctx: &egui::Context,
         allocator: &mut gpu_allocator::vulkan::Allocator,
     ) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::Window::new("Tracer Controls")
-                .resizable(true)
-                .default_width(300.0)
-                .open(&mut self.tracer_controls_open)
-                .show(ui.ctx(), |ui| {
-                    ui.label(format!("FPS: {:.2}", self.fps));
+        egui::SidePanel::left("side_panel")
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.collapsing("Tracer Controls", |ui| {
                     ui.label("Tracer Controls go here");
                 });
 
-            self.allocator_visualizer.render_breakdown_window(
-                ctx,
-                allocator,
-                &mut self.allocator_breakdown_open,
-            );
-        });
+                ui.collapsing("Allocator Breakdown", |ui| {
+                    self.allocator_visualizer.render_breakdown_ui(ui, allocator);
+                });
+            });
     }
 }
