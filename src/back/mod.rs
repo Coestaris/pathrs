@@ -67,7 +67,7 @@ impl Back {
         _available: &Vec<String>,
         _compatibilities: &mut DeviceCompatibilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
-        Ok(vec![])
+        Ok(vec![ash::ext::buffer_device_address::NAME.as_ptr()])
     }
 
     pub unsafe fn is_device_suitable(
@@ -76,6 +76,19 @@ impl Back {
         _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<bool> {
         Ok(true)
+    }
+
+    pub unsafe fn patch_create_device_info(
+        _entry: &ash::Entry,
+        _instance: &ash::Instance,
+        _physical_device: vk::PhysicalDevice,
+        create_info: vk::DeviceCreateInfo,
+        on_patched: &mut impl FnMut(vk::DeviceCreateInfo) -> anyhow::Result<ash::Device>,
+    ) -> anyhow::Result<ash::Device> {
+        let mut device_address_info =
+            vk::PhysicalDeviceBufferDeviceAddressFeatures::default().buffer_device_address(true);
+        let create_info = create_info.push_next(&mut device_address_info);
+        on_patched(create_info)
     }
 
     pub unsafe fn find_queue_families(

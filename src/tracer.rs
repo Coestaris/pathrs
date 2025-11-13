@@ -15,13 +15,40 @@ use std::ffi::{c_char, CStr, CString};
 use std::sync::{Arc, Mutex};
 
 unsafe extern "system" fn debug_callback(
-    _message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-    _message_types: vk::DebugUtilsMessageTypeFlagsEXT,
+    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+    message_types: vk::DebugUtilsMessageTypeFlagsEXT,
     p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
     _p_user_data: *mut std::ffi::c_void,
 ) -> vk::Bool32 {
     let message = CStr::from_ptr((*p_callback_data).p_message);
-    eprintln!("VULKAN DEBUG: {:?}", message);
+    let level = if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR) {
+        log::Level::Error
+    } else if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::WARNING) {
+        log::Level::Warn
+    } else if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE) {
+        log::Level::Debug
+    } else {
+        log::Level::Info
+    };
+
+    let mtype = if message_types.contains(vk::DebugUtilsMessageTypeFlagsEXT::GENERAL) {
+        "GENERAL"
+    } else if message_types.contains(vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION) {
+        "VALIDATION"
+    } else if message_types.contains(vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE) {
+        "PERFORMANCE"
+    } else {
+        "UNKNOWN"
+    };
+
+    match level {
+        log::Level::Error => warn!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
+        log::Level::Warn => info!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
+        log::Level::Debug => debug!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
+        log::Level::Info => info!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
+        _ => unreachable!(),
+    }
+
     vk::FALSE
 }
 
@@ -408,9 +435,26 @@ impl<F: Front> Tracer<F> {
             .queue_create_infos(&queue_create_infos)
             .enabled_features(&features)
             .flags(vk::DeviceCreateFlags::empty());
-        let logical_device = instance
-            .create_device(physical_device, &device_create_info, None)
-            .context("Failed to create logical device")?;
+
+        let logical_device = front.patch_create_device_info(
+            entry,
+            instance,
+            physical_device,
+            device_create_info,
+            &mut |device_create_info| {
+                Back::patch_create_device_info(
+                    entry,
+                    instance,
+                    physical_device,
+                    device_create_info,
+                    &mut |device_create_info| {
+                        instance
+                            .create_device(physical_device, &device_create_info, None)
+                            .context("Failed to create logical device")
+                    },
+                )
+            },
+        )?;
 
         let back_queues = back_queues.into_queues(&logical_device)?;
         debug!("Acquired common queues: {:?}", back_queues);

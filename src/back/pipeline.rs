@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
+use crate::back::BackQueues;
 use ash::Device;
 use gpu_allocator::vulkan::Allocator;
 use log::{debug, warn};
-use crate::back::BackQueues;
+use std::sync::{Arc, Mutex};
 
 pub struct TracerPipeline {
     queues: BackQueues,

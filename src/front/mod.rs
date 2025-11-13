@@ -57,6 +57,17 @@ pub trait Front {
         _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<Self::FrontQueueFamilyIndices>;
 
+    unsafe fn patch_create_device_info(
+        &self,
+        _entry: &ash::Entry,
+        _instance: &ash::Instance,
+        _physical_device: vk::PhysicalDevice,
+        create_info: vk::DeviceCreateInfo,
+        on_patched: &mut impl FnMut(vk::DeviceCreateInfo) -> anyhow::Result<ash::Device>,
+    ) -> anyhow::Result<ash::Device> {
+        on_patched(create_info)
+    }
+
     unsafe fn init(
         &mut self,
         _entry: &ash::Entry,
