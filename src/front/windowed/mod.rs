@@ -1,8 +1,8 @@
 use crate::config::TracerConfig;
 use crate::fps::{FPSResult, FPS};
+use crate::front::windowed::front::TracerWindowedFront;
+use crate::front::windowed::ui::UICompositor;
 use crate::tracer::Tracer;
-use crate::windowed::front::TracerWindowedFront;
-use crate::windowed::ui::UICompositor;
 use build_info::BuildInfo;
 use glam::UVec2;
 use log::info;
@@ -17,7 +17,8 @@ use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::{Window, WindowAttributes, WindowId};
 
 mod front;
-mod runtime;
+mod pipeline;
+mod quad;
 mod ui;
 
 struct Context {

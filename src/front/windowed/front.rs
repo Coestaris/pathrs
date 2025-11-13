@@ -1,8 +1,8 @@
+use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
+use crate::common::queue::QueueFamily;
+use crate::front::windowed::pipeline::PresentationPipeline;
+use crate::front::windowed::ui::UICompositor;
 use crate::front::{Front, QueueFamilyIndices};
-use crate::vk::device::{DeviceCompatibilities, QueueFamily};
-use crate::vk::instance::InstanceCompatibilities;
-use crate::windowed::runtime::Runtime;
-use crate::windowed::ui::UICompositor;
 use anyhow::Context;
 use ash::{vk, Device};
 use gpu_allocator::vulkan::Allocator;
@@ -171,7 +171,7 @@ pub struct TracerWindowedFront {
     surface: vk::SurfaceKHR,
     viewport: glam::UVec2,
     platform: Mode,
-    runtime: Option<Runtime>,
+    runtime: Option<PresentationPipeline>,
     destroyed: bool,
     ui: Rc<RefCell<UICompositor>>,
 }
@@ -309,7 +309,7 @@ impl Front for TracerWindowedFront {
         })
     }
 
-    unsafe fn set_device(
+    unsafe fn init(
         &mut self,
         entry: &ash::Entry,
         instance: &ash::Instance,
@@ -319,7 +319,7 @@ impl Front for TracerWindowedFront {
         allocator: Arc<Mutex<Allocator>>,
     ) -> anyhow::Result<()> {
         self.runtime = Some(
-            Runtime::new(
+            PresentationPipeline::new(
                 allocator,
                 self.viewport,
                 entry,

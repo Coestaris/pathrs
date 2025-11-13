@@ -1,5 +1,5 @@
 use crate::config::TracerConfig;
-use crate::headless::front::TracerHeadlessFront;
+use crate::front::headless::front::TracerHeadlessFront;
 use crate::tracer::Tracer;
 use build_info::BuildInfo;
 use glam::UVec2;

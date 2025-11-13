@@ -1,7 +1,7 @@
-use crate::vk::quad::{QuadBuffer, QuadVertex};
-use crate::vk::shader::Shader;
-use crate::windowed::front::WindowedQueues;
-use crate::windowed::ui::UICompositor;
+use crate::common::shader::Shader;
+use crate::front::windowed::front::WindowedQueues;
+use crate::front::windowed::quad::{QuadBuffer, QuadVertex};
+use crate::front::windowed::ui::UICompositor;
 use anyhow::Context;
 use ash::{vk, Device};
 use egui::{FullOutput, TextureId};
@@ -18,7 +18,7 @@ use winit::window::Window;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-pub struct Runtime {
+pub struct PresentationPipeline {
     queues: WindowedQueues,
     allocator: Arc<Mutex<Allocator>>,
     destroyed: bool,
@@ -54,7 +54,7 @@ pub struct Runtime {
     frag_shader: Shader,
 }
 
-impl Runtime {
+impl PresentationPipeline {
     pub(crate) unsafe fn new(
         allocator: Arc<Mutex<Allocator>>,
         viewport: glam::UVec2,
@@ -137,7 +137,7 @@ impl Runtime {
         ) = Self::create_sync_objects(device, images.len())
             .context("Failed to create synchronization objects")?;
 
-        Ok(Runtime {
+        Ok(PresentationPipeline {
             swapchain_loader: ash::khr::swapchain::Device::new(instance, device),
 
             queues,
@@ -255,7 +255,7 @@ impl Runtime {
             swapchain_loader.destroy_swapchain(self.swapchain, None);
             self.destroyed = true;
         } else {
-            warn!("Runtime already destroyed");
+            warn!("PresentationPipeline already destroyed");
         }
     }
 
@@ -966,10 +966,10 @@ impl Runtime {
     }
 }
 
-impl Drop for Runtime {
+impl Drop for PresentationPipeline {
     fn drop(&mut self) {
         if !self.destroyed {
-            warn!("Leaked runtime");
+            warn!("Leaked PresentationPipeline");
         }
     }
 }

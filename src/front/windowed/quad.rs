@@ -1,4 +1,4 @@
-use crate::vk::buffer::create_device_local_buffer_with_data;
+use crate::common::buffer::create_device_local_buffer_with_data;
 use ash::{vk, Device};
 use gpu_allocator::vulkan::{Allocation, Allocator};
 use std::mem::offset_of;
@@ -28,7 +28,7 @@ impl QuadVertex {
     pub fn get_binding_description() -> vk::VertexInputBindingDescription {
         vk::VertexInputBindingDescription {
             binding: 0,
-            stride: std::mem::size_of::<QuadVertex>() as u32,
+            stride: size_of::<QuadVertex>() as u32,
             input_rate: vk::VertexInputRate::VERTEX,
         }
     }

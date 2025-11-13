@@ -1,20 +1,19 @@
 use crate::config::TracerConfig;
-use crate::headless::headless_tracer;
+use crate::front::headless::headless_tracer;
+use crate::front::windowed::TracerApp;
 use crate::logging::setup_logging;
-use crate::windowed::TracerApp;
 use clap::Parser;
 use glam::UVec2;
 use log::{info, LevelFilter};
 use winit::event_loop::{ControlFlow, EventLoop};
 
+mod back;
+mod common;
 mod config;
+mod fps;
 mod front;
-mod headless;
 mod logging;
 mod tracer;
-mod vk;
-mod windowed;
-mod fps;
 
 build_info::build_info!(pub fn get_build_info);
 

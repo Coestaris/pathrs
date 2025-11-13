@@ -1,10 +1,13 @@
-use crate::vk::device::{DeviceCompatibilities, QueueFamily};
-use crate::vk::instance::InstanceCompatibilities;
+use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
+use crate::common::queue::QueueFamily;
 use ash::{vk, Device};
+use gpu_allocator::vulkan::Allocator;
 use std::ffi::c_char;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
-use gpu_allocator::vulkan::Allocator;
+
+pub mod headless;
+pub mod windowed;
 
 pub trait QueueFamilyIndices {
     type Queues: Debug;
@@ -54,7 +57,7 @@ pub trait Front {
         _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<Self::FrontQueueFamilyIndices>;
 
-    unsafe fn set_device(
+    unsafe fn init(
         &mut self,
         _entry: &ash::Entry,
         _instance: &ash::Instance,

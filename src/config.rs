@@ -49,6 +49,4 @@ impl Clone for TracerConfig {
     }
 }
 
-impl TracerConfig {
-
-}
+impl TracerConfig {}

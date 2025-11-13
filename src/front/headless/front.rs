@@ -1,6 +1,6 @@
+use crate::common::queue::QueueFamily;
+use crate::front::headless::TracerHeadlessOutput;
 use crate::front::{Front, QueueFamilyIndices};
-use crate::headless::TracerHeadlessOutput;
-use crate::vk::device::QueueFamily;
 use ash::vk::PhysicalDevice;
 use ash::{Device, Entry, Instance};
 use log::info;

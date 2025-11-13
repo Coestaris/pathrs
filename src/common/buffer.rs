@@ -62,8 +62,8 @@ pub unsafe fn create_device_local_buffer_with_data<T: Copy>(
         .command_buffer_count(1);
     let cmd_buf = device.allocate_command_buffers(&cmd_alloc_info)?[0];
 
-    let begin_info = vk::CommandBufferBeginInfo::default()
-        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    let begin_info =
+        vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
     device.begin_command_buffer(cmd_buf, &begin_info)?;
 
     let copy_region = vk::BufferCopy {
@@ -74,8 +74,7 @@ pub unsafe fn create_device_local_buffer_with_data<T: Copy>(
     device.cmd_copy_buffer(cmd_buf, staging_buffer, buffer, &[copy_region]);
     device.end_command_buffer(cmd_buf)?;
 
-    let submit_info = vk::SubmitInfo::default()
-        .command_buffers(std::slice::from_ref(&cmd_buf));
+    let submit_info = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&cmd_buf));
 
     device.queue_submit(queue, &[submit_info], vk::Fence::null())?;
     device.queue_wait_idle(queue)?;
