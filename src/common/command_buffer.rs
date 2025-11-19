@@ -115,6 +115,40 @@ impl CommandBuffer {
         device.cmd_bind_pipeline(self.command_buffer, bind, pipeline);
     }
 
+    pub unsafe fn bind_descriptor_sets(
+        &self,
+        device: &ash::Device,
+        bind: vk::PipelineBindPoint,
+        pipeline_layout: vk::PipelineLayout,
+        first_set: u32,
+        descriptor_sets: &[vk::DescriptorSet],
+        dynamic_offsets: &[u32],
+    ) {
+        device.cmd_bind_descriptor_sets(
+            self.command_buffer,
+            bind,
+            pipeline_layout,
+            first_set,
+            descriptor_sets,
+            dynamic_offsets,
+        );
+    }
+
+    pub unsafe fn dispatch(
+        &self,
+        device: &ash::Device,
+        group_count_x: u32,
+        group_count_y: u32,
+        group_count_z: u32,
+    ) {
+        device.cmd_dispatch(
+            self.command_buffer,
+            group_count_x,
+            group_count_y,
+            group_count_z,
+        );
+    }
+
     pub unsafe fn destroy(&mut self, pool: vk::CommandPool, device: &ash::Device) {
         if !self.destroyed {
             device.free_command_buffers(pool, &[self.command_buffer]);

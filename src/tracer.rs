@@ -506,8 +506,15 @@ impl<F: Front> Tracer<F> {
             Tracer::<D>::new_device(&entry, &instance, &mut front)?;
 
         info!("Initializing back-end");
-        let back = TracerPipeline::new(allocator.clone(), back_queues)
-            .context("Failed to create tracer pipeline")?;
+        let back = TracerPipeline::new(
+            allocator.clone(),
+            viewport,
+            &entry,
+            &instance,
+            &logical_device,
+            back_queues,
+        )
+        .context("Failed to create tracer pipeline")?;
 
         info!("Initializing front-end");
         front.init(
@@ -533,12 +540,12 @@ impl<F: Front> Tracer<F> {
         })
     }
 
-    unsafe fn trace_inner(&mut self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     pub unsafe fn trace(&mut self, w: Option<&winit::window::Window>) -> anyhow::Result<()> {
-        self.trace_inner()?;
+        self.back
+            .as_mut()
+            .unwrap()
+            .present(&self.entry, &self.instance, &self.logical_device)
+            .context("Failed to present tracer back-end")?;
 
         self.front
             .as_mut()

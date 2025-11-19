@@ -28,6 +28,7 @@ impl QueueFamilyIndices for BackQueueFamilyIndices {
         let compute_queue = device.get_device_queue(self.compute_family, 0);
 
         Ok(BackQueues {
+            indices: self,
             graphics_queue,
             compute_queue,
         })
@@ -42,6 +43,7 @@ pub struct BackQueueFamilyIndices {
 
 #[derive(Debug)]
 pub struct BackQueues {
+    pub indices: BackQueueFamilyIndices,
     pub graphics_queue: vk::Queue,
     pub compute_queue: vk::Queue,
 }
