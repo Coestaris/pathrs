@@ -234,7 +234,7 @@ impl PresentationPipeline {
 
         for (i, descriptor_set) in descriptor_sets.iter().enumerate() {
             let image_info = vk::DescriptorImageInfo::default()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_layout(vk::ImageLayout::GENERAL)
                 .image_view(slots[i].image_view)
                 .sampler(slots[i].sampler);
             let writes = [vk::WriteDescriptorSet::default()
