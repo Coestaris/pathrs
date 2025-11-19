@@ -1,3 +1,4 @@
+use crate::back::pipeline::TracerSlot;
 use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
 use crate::common::queue::QueueFamily;
 use crate::front::windowed::pipeline::PresentationPipeline;
@@ -317,6 +318,7 @@ impl Front for TracerWindowedFront {
         physical_device: vk::PhysicalDevice,
         queues: WindowedQueues,
         allocator: Arc<Mutex<Allocator>>,
+        slots: Vec<TracerSlot>,
     ) -> anyhow::Result<()> {
         self.runtime = Some(
             PresentationPipeline::new(
@@ -329,6 +331,7 @@ impl Front for TracerWindowedFront {
                 physical_device,
                 queues,
                 self.ui.clone(),
+                slots,
             )
             .context("Failed to create windowed runtime")?,
         );
@@ -375,6 +378,7 @@ impl Front for TracerWindowedFront {
         instance: &ash::Instance,
         device: &Device,
         physical_device: vk::PhysicalDevice,
+        tracer_slot: TracerSlot,
     ) -> anyhow::Result<()> {
         if let Some(runtime) = &mut self.runtime {
             runtime
@@ -385,6 +389,7 @@ impl Front for TracerWindowedFront {
                     device,
                     self.surface,
                     physical_device,
+                    tracer_slot,
                 )
                 .context("Failed to present windowed runtime")
         } else {

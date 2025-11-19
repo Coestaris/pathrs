@@ -5,6 +5,7 @@ use gpu_allocator::vulkan::Allocator;
 use std::ffi::c_char;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
+use crate::back::pipeline::TracerSlot;
 
 pub mod headless;
 pub mod windowed;
@@ -76,6 +77,7 @@ pub trait Front {
         _physical_device: vk::PhysicalDevice,
         _queues: <<Self as Front>::FrontQueueFamilyIndices as QueueFamilyIndices>::Queues,
         _allocator: Arc<Mutex<Allocator>>,
+        _slots: Vec<TracerSlot>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -101,6 +103,7 @@ pub trait Front {
         _instance: &ash::Instance,
         _device: &Device,
         _physical_device: vk::PhysicalDevice,
+        _tracer_slot: TracerSlot,
     ) -> anyhow::Result<()> {
         Ok(())
     }

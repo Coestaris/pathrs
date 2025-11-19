@@ -1,3 +1,4 @@
+use crate::back::pipeline::TracerSlot;
 use crate::common::queue::QueueFamily;
 use crate::front::headless::TracerHeadlessOutput;
 use crate::front::{Front, QueueFamilyIndices};
@@ -60,6 +61,7 @@ impl Front for TracerHeadlessFront {
         _instance: &Instance,
         _device: &Device,
         _physical_device: PhysicalDevice,
+        slot: TracerSlot,
     ) -> anyhow::Result<()> {
         info!("Presenting frame");
 

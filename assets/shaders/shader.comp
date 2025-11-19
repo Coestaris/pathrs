@@ -1,11 +1,21 @@
 #version 450
 
+layout(local_size_x = 16, local_size_y = 16) in;
+
 layout (binding = 0, rgba8) uniform writeonly image2D output_image;
 
 void main() {
-    // Randomly generate coordinates within the image dimensions
     ivec2 imgSize = imageSize(output_image);
-    ivec2 coords = ivec2(int(gl_GlobalInvocationID.x) % imgSize.x, int(gl_GlobalInvocationID.y) % imgSize.y);
-    vec4 new_pixel = vec4(float(coords.x) / float(imgSize.x), float(coords.y) / float(imgSize.y), 0.5, 1.0);
+    ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
+
+    if (coords.x >= imgSize.x || coords.y >= imgSize.y)
+    return;
+
+    vec4 new_pixel = vec4(
+        float(coords.x) / float(imgSize.x) * 1.0,
+        float(coords.y) / float(imgSize.y) * 1.0,
+        0.5,
+        1.0
+    );
     imageStore(output_image, coords, new_pixel);
 }

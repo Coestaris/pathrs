@@ -506,7 +506,7 @@ impl<F: Front> Tracer<F> {
             Tracer::<D>::new_device(&entry, &instance, &mut front)?;
 
         info!("Initializing back-end");
-        let back = TracerPipeline::new(
+        let (back, slots) = TracerPipeline::new(
             allocator.clone(),
             viewport,
             &entry,
@@ -524,6 +524,7 @@ impl<F: Front> Tracer<F> {
             physical_device,
             front_queues,
             allocator.clone(),
+            slots
         )?;
 
         Ok(Tracer {
@@ -541,7 +542,8 @@ impl<F: Front> Tracer<F> {
     }
 
     pub unsafe fn trace(&mut self, w: Option<&winit::window::Window>) -> anyhow::Result<()> {
-        self.back
+        let slot = self
+            .back
             .as_mut()
             .unwrap()
             .present(&self.entry, &self.instance, &self.logical_device)
@@ -556,6 +558,7 @@ impl<F: Front> Tracer<F> {
                 &self.instance,
                 &self.logical_device,
                 self.physical_device,
+                slot
             )
             .context("Failed to present tracer front")?;
 
