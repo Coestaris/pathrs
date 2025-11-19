@@ -1,3 +1,4 @@
+use crate::common::command_buffer::CommandBuffer;
 use ash::{vk, Device};
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
@@ -56,30 +57,19 @@ pub unsafe fn create_device_local_buffer_with_data<T: Copy>(
         // allocator.flush(&staging_alloc, 0, buffer_size)?;
     }
 
-    let cmd_alloc_info = vk::CommandBufferAllocateInfo::default()
-        .command_pool(command_pool)
-        .level(vk::CommandBufferLevel::PRIMARY)
-        .command_buffer_count(1);
-    let cmd_buf = device.allocate_command_buffers(&cmd_alloc_info)?[0];
+    let mut command_buffer = CommandBuffer::new_from_pool(device, command_pool)?;
 
-    let begin_info =
-        vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-    device.begin_command_buffer(cmd_buf, &begin_info)?;
+    command_buffer.begin(device)?;
+    command_buffer.copy_buffer(device, staging_buffer, buffer, buffer_size);
+    command_buffer.end(device)?;
 
-    let copy_region = vk::BufferCopy {
-        src_offset: 0,
-        dst_offset: 0,
-        size: buffer_size,
-    };
-    device.cmd_copy_buffer(cmd_buf, staging_buffer, buffer, &[copy_region]);
-    device.end_command_buffer(cmd_buf)?;
-
-    let submit_info = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&cmd_buf));
+    let submit_info = command_buffer.as_submit_info();
 
     device.queue_submit(queue, &[submit_info], vk::Fence::null())?;
     device.queue_wait_idle(queue)?;
 
-    device.free_command_buffers(command_pool, &[cmd_buf]);
+    command_buffer.destroy(command_pool, device);
+
     allocator.free(staging_alloc)?;
     device.destroy_buffer(staging_buffer, None);
 

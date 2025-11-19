@@ -1,3 +1,4 @@
+use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
 use crate::front::windowed::front::WindowedQueues;
 use crate::front::windowed::quad::{QuadBuffer, QuadVertex};
@@ -47,7 +48,7 @@ pub struct PresentationPipeline {
     quad: QuadBuffer,
 
     command_pool: vk::CommandPool,
-    command_buffers: Vec<vk::CommandBuffer>,
+    command_buffers: Vec<CommandBuffer>,
     swapchain_framebuffers: Vec<vk::Framebuffer>,
 
     vert_shader: Shader,
@@ -220,7 +221,9 @@ impl PresentationPipeline {
             }
 
             debug!("Destroying command pool and buffers");
-            device.free_command_buffers(self.command_pool, &self.command_buffers);
+            for cmd_buf in &mut self.command_buffers {
+                cmd_buf.destroy(self.command_pool, device);
+            }
             device.destroy_command_pool(self.command_pool, None);
 
             debug!("Destroying buffers");
@@ -600,17 +603,16 @@ impl PresentationPipeline {
     unsafe fn create_command_buffers(
         device: &Device,
         queues: &WindowedQueues,
-    ) -> anyhow::Result<(vk::CommandPool, Vec<vk::CommandBuffer>)> {
+    ) -> anyhow::Result<(vk::CommandPool, Vec<CommandBuffer>)> {
         let command_pool_info = vk::CommandPoolCreateInfo::default()
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
             .queue_family_index(queues.indices.graphics_family);
         let command_pool = device.create_command_pool(&command_pool_info, None)?;
 
-        let command_buffer_info = vk::CommandBufferAllocateInfo::default()
-            .command_pool(command_pool)
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(MAX_FRAMES_IN_FLIGHT as u32);
-        let command_buffer = device.allocate_command_buffers(&command_buffer_info)?;
+        let command_buffer = (0..MAX_FRAMES_IN_FLIGHT)
+            .map(|_| CommandBuffer::new_from_pool(device, command_pool))
+            .collect::<anyhow::Result<Vec<CommandBuffer>>>()?;
+
         Ok((command_pool, command_buffer))
     }
 
@@ -652,7 +654,7 @@ impl PresentationPipeline {
     unsafe fn record_egui_buffer(
         &mut self,
         w: &Window,
-        command_buffer: vk::CommandBuffer,
+        command_buffer: &CommandBuffer,
     ) -> anyhow::Result<()> {
         // Free last frames textures after the previous frame is done rendering
         if let Some(textures) = self.textures_to_free.take() {
@@ -695,22 +697,20 @@ impl PresentationPipeline {
             width: self.chain_extent.width,
             height: self.chain_extent.height,
         };
-        Ok(self
-            .ui_renderer
-            .cmd_draw(command_buffer, extent, pixels_per_point, &clipped_meshes)?)
+        Ok(self.ui_renderer.cmd_draw(
+            command_buffer.as_inner(),
+            extent,
+            pixels_per_point,
+            &clipped_meshes,
+        )?)
     }
 
     unsafe fn record_command_buffer(
         &self,
-        command_buffer: vk::CommandBuffer,
+        command_buffer: &CommandBuffer,
         device: &Device,
     ) -> anyhow::Result<()> {
-        device.cmd_bind_pipeline(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.pipeline,
-        );
-
+        command_buffer.bind_pipeline(device, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
         self.quad.draw(device, command_buffer);
 
         Ok(())
@@ -740,14 +740,12 @@ impl PresentationPipeline {
     unsafe fn render(
         &mut self,
         w: &Window,
-        command_buffer: vk::CommandBuffer,
+        command_buffer: &CommandBuffer,
         device: &Device,
         image_index: usize,
     ) -> anyhow::Result<()> {
-        device.reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
-
-        let begin_info = vk::CommandBufferBeginInfo::default();
-        device.begin_command_buffer(command_buffer, &begin_info)?;
+        command_buffer.reset(device)?;
+        command_buffer.begin(device)?;
 
         let clear_values = vec![vk::ClearValue {
             color: vk::ClearColorValue {
@@ -762,11 +760,7 @@ impl PresentationPipeline {
                 extent: self.chain_extent,
             })
             .clear_values(&clear_values);
-        device.cmd_begin_render_pass(
-            command_buffer,
-            &render_pass_info,
-            vk::SubpassContents::INLINE,
-        );
+        command_buffer.begin_renderpass(device, &render_pass_info, vk::SubpassContents::INLINE);
 
         let viewport = vk::Viewport::default()
             .x(0.0)
@@ -775,17 +769,17 @@ impl PresentationPipeline {
             .height(self.chain_extent.height as f32)
             .min_depth(0.0)
             .max_depth(1.0);
-        device.cmd_set_viewport(command_buffer, 0, &[viewport]);
+        command_buffer.set_viewport(device, viewport);
         let scissor = vk::Rect2D::default()
             .offset(vk::Offset2D { x: 0, y: 0 })
             .extent(self.chain_extent);
-        device.cmd_set_scissor(command_buffer, 0, &[scissor]);
+        command_buffer.set_scissor(device, scissor);
 
         self.record_command_buffer(command_buffer, device)?;
         self.record_egui_buffer(&w, command_buffer)?;
 
-        device.cmd_end_render_pass(command_buffer);
-        device.end_command_buffer(command_buffer)?;
+        command_buffer.end_renderpass(device);
+        command_buffer.end(device)?;
 
         Ok(())
     }
@@ -918,14 +912,15 @@ impl PresentationPipeline {
         self.images_in_flight[index] = self.in_flight_fences[self.current_frame];
 
         // Record command buffer
-        self.render(w, self.command_buffers[self.current_frame], device, index)?;
+        let buffer_ptr: *mut CommandBuffer = &mut self.command_buffers[self.current_frame];
+        self.render(w, buffer_ptr.as_ref().unwrap(), device, index)?;
         device.reset_fences(&[self.in_flight_fences[self.current_frame]])?;
 
         // Submit
         let wait_semaphores = [self.image_available_semaphores[self.current_frame]];
         let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
         let signal_semaphores = [self.render_finished_semaphores[index]];
-        let command_buffers = vec![self.command_buffers[self.current_frame]];
+        let command_buffers = vec![self.command_buffers[self.current_frame].as_inner()];
         let submit_info = vk::SubmitInfo::default()
             .wait_semaphores(&wait_semaphores)
             .wait_dst_stage_mask(&wait_stages)

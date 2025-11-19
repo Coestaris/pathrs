@@ -1,4 +1,5 @@
 use crate::common::buffer::create_device_local_buffer_with_data;
+use crate::common::command_buffer::CommandBuffer;
 use ash::{vk, Device};
 use gpu_allocator::vulkan::{Allocation, Allocator};
 use std::mem::offset_of;
@@ -116,12 +117,10 @@ impl QuadBuffer {
         self.destroyed = true;
     }
 
-    pub unsafe fn draw(&self, device: &Device, command_buffer: vk::CommandBuffer) {
-        let vertex_buffers = [self.vertex_buffer];
-        let offsets = [0u64];
-        device.cmd_bind_vertex_buffers(command_buffer, 0, &vertex_buffers, &offsets);
-        device.cmd_bind_index_buffer(command_buffer, self.index_buffer, 0, vk::IndexType::UINT16);
-        device.cmd_draw_indexed(command_buffer, 6, 1, 0, 0, 0);
+    pub unsafe fn draw(&self, device: &Device, command_buffer: &CommandBuffer) {
+        command_buffer.bind_vertex_buffer(device, 0, self.vertex_buffer, 0);
+        command_buffer.bind_index_buffer(device, self.index_buffer, 0, vk::IndexType::UINT16);
+        command_buffer.draw_indexed(device, 6, 1, 0, 0, 0);
     }
 }
 
