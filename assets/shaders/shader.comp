@@ -11,11 +11,10 @@ void main() {
     if (coords.x >= imgSize.x || coords.y >= imgSize.y)
     return;
 
-    vec4 new_pixel = vec4(
-        float(coords.x) / float(imgSize.x) * 1.0,
-        float(coords.y) / float(imgSize.y) * 1.0,
-        0.5,
-        1.0
-    );
+    float r = (int(coords.x / 10) % 2) == 0 ? 0.0 : 1.0;
+    float g = (int(coords.y / 10) % 2) == 0 ? 0.0 : 1.0;
+    float b = 0;
+
+    vec4 new_pixel = vec4(r, g, b, 1.0);
     imageStore(output_image, coords, new_pixel);
 }

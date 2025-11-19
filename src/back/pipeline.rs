@@ -17,6 +17,7 @@ pub struct TracerSlot {
     pub image_view: vk::ImageView,
     pub sampler: vk::Sampler,
     pub semaphore: vk::Semaphore,
+    pub descriptor_set: vk::DescriptorSet,
     pub index: usize,
 }
 
@@ -86,7 +87,7 @@ impl TracerPipeline {
             .stage(vk::ShaderStageFlags::COMPUTE)
             .module(compute_shader.module)
             .name(entrypoint);
-        
+
         debug!("Creating pipeline");
         let (pipeline_layout, pipeline) =
             Self::create_pipeline(device, &descriptor_set_layout, &stage)
@@ -102,6 +103,7 @@ impl TracerPipeline {
                 image_view: image_views[i],
                 sampler: image_samplers[i],
                 semaphore: render_finished_semaphores[i],
+                descriptor_set: descriptor_sets[i],
                 index: i,
             })
             .collect();
@@ -299,7 +301,7 @@ impl TracerPipeline {
             .binding(0)
             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::COMPUTE)];
+            .stage_flags(vk::ShaderStageFlags::COMPUTE | vk::ShaderStageFlags::FRAGMENT)];
 
         let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
         let descriptor_set_layout = device.create_descriptor_set_layout(&layout_info, None)?;
@@ -460,8 +462,71 @@ impl TracerPipeline {
             image_view: self.image_views[idx],
             sampler: self.image_samplers[idx],
             semaphore: sem,
+            descriptor_set: self.descriptor_sets[idx],
             index: idx,
         })
+    }
+
+    pub unsafe fn resize(
+        &mut self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &Device,
+        physical_device: vk::PhysicalDevice,
+        size: glam::UVec2,
+    ) -> anyhow::Result<()> {
+        if self.viewport != size {
+            debug!(
+                "Resizing TracerPipeline from {:?} to {:?}",
+                self.viewport, size
+            );
+            self.viewport = size;
+
+            device.device_wait_idle()?;
+
+            // Destroy existing images
+            for (i, image) in self.images.iter().enumerate() {
+                if let Some(allocation) = self.image_allocations[i].take() {
+                    self.allocator
+                        .lock()
+                        .unwrap()
+                        .free(allocation)
+                        .expect("Failed to free image allocation");
+                }
+                device.destroy_image_view(self.image_views[i], None);
+                device.destroy_sampler(self.image_samplers[i], None);
+                device.destroy_image(*image, None);
+            }
+
+            // Destroy descriptor sets
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            device.destroy_descriptor_pool(self.descriptor_pool, None);
+
+            // Create new images
+            let (images, image_views, image_samplers, image_allocations) = Self::create_images(
+                &mut self.allocator.lock().unwrap(),
+                device,
+                &self.queues,
+                self.command_pool,
+                self.viewport,
+            )
+            .context("Failed to create images")?;
+
+            self.images = images;
+            self.image_views = image_views;
+            self.image_samplers = image_samplers;
+            self.image_allocations = image_allocations.into_iter().map(Some).collect();
+
+            // Create new descriptor sets
+            let (descriptor_set_layout, descriptor_pool, descriptor_sets) =
+                Self::create_descriptor_sets(device, &self.image_views)
+                    .context("Failed to create descriptor set layout")?;
+            self.descriptor_set_layout = descriptor_set_layout;
+            self.descriptor_pool = descriptor_pool;
+            self.descriptor_sets = descriptor_sets;
+        }
+
+        Ok(())
     }
 
     pub unsafe fn destroy(

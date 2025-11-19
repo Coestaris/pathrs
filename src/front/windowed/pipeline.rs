@@ -29,10 +29,6 @@ pub struct PresentationPipeline {
     ui: Rc<RefCell<UICompositor>>,
     textures_to_free: Option<Vec<TextureId>>,
 
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    descriptor_pool: vk::DescriptorPool,
-    descriptor_sets: Vec<vk::DescriptorSet>, // size = MAX_FRAMES_IN_FLIGHT
-
     swapchain_loader: ash::khr::swapchain::Device,
     swapchain: vk::SwapchainKHR,
     chain_images: Vec<vk::Image>,
@@ -102,11 +98,6 @@ impl PresentationPipeline {
         let render_pass =
             Self::create_render_pass(device, format).context("Failed to create render pass")?;
 
-        debug!("Creating descriptor sets");
-        let (descriptor_set_layout, descriptor_pool, descriptor_sets) =
-            Self::create_descriptor_sets(device, &allocator, slots)
-                .context("Failed to create descriptor sets")?;
-
         let entrypoint = CStr::from_bytes_with_nul(b"main\0")?;
         let stages = vec![
             vk::PipelineShaderStageCreateInfo::default()
@@ -119,7 +110,7 @@ impl PresentationPipeline {
                 .name(entrypoint),
         ];
         let (pipeline_layout, pipeline) =
-            Self::create_pipeline(device, extent, render_pass, descriptor_set_layout, &stages)
+            Self::create_pipeline(device, extent, render_pass, &stages)
                 .context("Failed to create pipeline")?;
 
         debug!("Creating framebuffers");
@@ -151,10 +142,6 @@ impl PresentationPipeline {
 
         Ok(PresentationPipeline {
             swapchain_loader: ash::khr::swapchain::Device::new(instance, device),
-
-            descriptor_set_layout,
-            descriptor_pool,
-            descriptor_sets,
 
             queues,
             swapchain,
@@ -196,57 +183,6 @@ impl PresentationPipeline {
             textures_to_free: None,
             allocator,
         })
-    }
-
-    pub unsafe fn create_descriptor_sets(
-        device: &Device,
-        allocator: &Arc<Mutex<Allocator>>,
-        slots: Vec<TracerSlot>,
-    ) -> anyhow::Result<(
-        vk::DescriptorSetLayout,
-        vk::DescriptorPool,
-        Vec<vk::DescriptorSet>,
-    )> {
-        let len = slots.len() as u32;
-
-        let bindings = [vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
-
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
-        let descriptor_set_layout = device.create_descriptor_set_layout(&layout_info, None)?;
-
-        let descriptor_pool_sizes = [vk::DescriptorPoolSize::default()
-            .descriptor_count(len)
-            .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)];
-        let descriptor_pool_info = vk::DescriptorPoolCreateInfo::default()
-            .max_sets(len)
-            .pool_sizes(&descriptor_pool_sizes);
-        let descriptor_pool = device.create_descriptor_pool(&descriptor_pool_info, None)?;
-
-        let layout_handles = vec![descriptor_set_layout; len as usize];
-        let alloc_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(descriptor_pool)
-            .set_layouts(&layout_handles);
-        let descriptor_sets = device.allocate_descriptor_sets(&alloc_info)?;
-
-        for (i, descriptor_set) in descriptor_sets.iter().enumerate() {
-            let image_info = vk::DescriptorImageInfo::default()
-                .image_layout(vk::ImageLayout::GENERAL)
-                .image_view(slots[i].image_view)
-                .sampler(slots[i].sampler);
-            let writes = [vk::WriteDescriptorSet::default()
-                .dst_set(*descriptor_set)
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .image_info(std::slice::from_ref(&image_info))];
-            device.update_descriptor_sets(&writes, &[]);
-        }
-
-        Ok((descriptor_set_layout, descriptor_pool, descriptor_sets))
     }
 
     pub unsafe fn swapchain_cleanup(&mut self, device: &Device) {
@@ -309,12 +245,6 @@ impl PresentationPipeline {
 
             debug!("Destroying pipeline layout");
             device.destroy_pipeline_layout(self.pipeline_layout, None);
-
-            debug!("Destroying descriptor set layout");
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-
-            debug!("Destroying descriptor pool");
-            device.destroy_descriptor_pool(self.descriptor_pool, None);
 
             debug!("Destroying shaders");
             self.vert_shader.destroy(device);
@@ -573,7 +503,6 @@ impl PresentationPipeline {
         device: &Device,
         extent: vk::Extent2D,
         render_pass: vk::RenderPass,
-        descriptor_set_layout: vk::DescriptorSetLayout,
         shader_stages: &[vk::PipelineShaderStageCreateInfo],
     ) -> anyhow::Result<(vk::PipelineLayout, vk::Pipeline)> {
         let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::default()
@@ -628,6 +557,15 @@ impl PresentationPipeline {
             .logic_op_enable(false)
             .logic_op(vk::LogicOp::COPY)
             .attachments(&color_blend_attachments);
+
+        let bindings = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        let descriptor_set_layout = device.create_descriptor_set_layout(&layout_info, None)?;
+
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(std::slice::from_ref(&descriptor_set_layout));
         let pipline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
@@ -782,7 +720,7 @@ impl PresentationPipeline {
     unsafe fn record_command_buffer(
         &self,
         command_buffer: &CommandBuffer,
-        tracer_index: usize,
+        tracer_slot: &TracerSlot,
         device: &Device,
     ) -> anyhow::Result<()> {
         command_buffer.bind_pipeline(device, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
@@ -791,7 +729,7 @@ impl PresentationPipeline {
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline_layout,
             0,
-            &[self.descriptor_sets[tracer_index]],
+            &[tracer_slot.descriptor_set],
             &[],
         );
         self.quad.draw(device, command_buffer);
@@ -826,7 +764,7 @@ impl PresentationPipeline {
         command_buffer: &CommandBuffer,
         device: &Device,
         image_index: usize,
-        tracer_index: usize,
+        tracer_slot: &TracerSlot,
     ) -> anyhow::Result<()> {
         command_buffer.reset(device)?;
         command_buffer.begin(device)?;
@@ -859,7 +797,7 @@ impl PresentationPipeline {
             .extent(self.chain_extent);
         command_buffer.set_scissor(device, scissor);
 
-        self.record_command_buffer(command_buffer, tracer_index, device)?;
+        self.record_command_buffer(command_buffer, tracer_slot, device)?;
         self.record_egui_buffer(&w, command_buffer)?;
 
         command_buffer.end_renderpass(device);
@@ -928,14 +866,9 @@ impl PresentationPipeline {
                     .module(self.frag_shader.module)
                     .name(entrypoint),
             ];
-            let (pipeline_layout, pipeline) = Self::create_pipeline(
-                device,
-                extent,
-                render_pass,
-                self.descriptor_set_layout,
-                &stages,
-            )
-            .context("Failed to create pipeline")?;
+            let (pipeline_layout, pipeline) =
+                Self::create_pipeline(device, extent, render_pass, &stages)
+                    .context("Failed to create pipeline")?;
 
             self.pipeline_layout = pipeline_layout;
             self.render_pass = render_pass;
@@ -1003,13 +936,7 @@ impl PresentationPipeline {
 
         // Record command buffer
         let buffer_ptr: *mut CommandBuffer = &mut self.command_buffers[self.current_frame];
-        self.render(
-            w,
-            buffer_ptr.as_ref().unwrap(),
-            device,
-            index,
-            tracer_slot.index,
-        )?;
+        self.render(w, buffer_ptr.as_ref().unwrap(), device, index, &tracer_slot)?;
         device.reset_fences(&[self.in_flight_fences[self.current_frame]])?;
 
         // Submit

@@ -524,7 +524,7 @@ impl<F: Front> Tracer<F> {
             physical_device,
             front_queues,
             allocator.clone(),
-            slots
+            slots,
         )?;
 
         Ok(Tracer {
@@ -558,7 +558,7 @@ impl<F: Front> Tracer<F> {
                 &self.instance,
                 &self.logical_device,
                 self.physical_device,
-                slot
+                slot,
             )
             .context("Failed to present tracer front")?;
 
@@ -567,6 +567,18 @@ impl<F: Front> Tracer<F> {
 
     pub unsafe fn resize(&mut self, size: UVec2) -> anyhow::Result<()> {
         self.viewport = size;
+
+        self.back
+            .as_mut()
+            .unwrap()
+            .resize(
+                &self.entry,
+                &self.instance,
+                &self.logical_device,
+                self.physical_device,
+                size,
+            )
+            .with_context(|| format!("Failed to resize tracer back-end to {:?}", size))?;
 
         self.front
             .as_mut()
