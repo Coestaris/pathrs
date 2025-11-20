@@ -7,6 +7,7 @@ use crate::front::windowed::ui::UICompositor;
 use anyhow::Context;
 use ash::{vk, Device};
 use egui::{FullOutput, TextureId};
+use glam::UVec2;
 use gpu_allocator::vulkan::Allocator;
 use log::{debug, warn};
 use std::cell::RefCell;
@@ -23,6 +24,7 @@ const MAX_FRAMES_IN_FLIGHT: usize = 2;
 pub struct PresentationPipeline {
     queues: WindowedQueues,
     allocator: Arc<Mutex<Allocator>>,
+    viewport: glam::UVec2,
     destroyed: bool,
 
     ui_renderer: egui_ash_renderer::Renderer,
@@ -72,7 +74,7 @@ impl PresentationPipeline {
     ) -> anyhow::Result<Self> {
         debug!("Creating swapchain");
         let (swapchain, images, format, extent) = Self::create_swapchain(
-            Some(viewport),
+            viewport,
             entry,
             instance,
             device,
@@ -184,6 +186,7 @@ impl PresentationPipeline {
             ui,
             textures_to_free: None,
             allocator,
+            viewport,
         })
     }
 
@@ -323,24 +326,39 @@ impl PresentationPipeline {
         viewport: glam::UVec2,
         capabilities: &vk::SurfaceCapabilitiesKHR,
     ) -> vk::Extent2D {
-        if capabilities.current_extent.width != u32::MAX {
-            capabilities.current_extent
+        let current = UVec2::new(
+            capabilities.current_extent.width,
+            capabilities.current_extent.height,
+        );
+        let min = UVec2::new(
+            capabilities.min_image_extent.width,
+            capabilities.min_image_extent.height,
+        );
+        let max = UVec2::new(
+            capabilities.max_image_extent.width,
+            capabilities.max_image_extent.height,
+        );
+
+        let desired = if current.x == u32::MAX
+            || current.y == u32::MAX
+            || current.x < min.x
+            || current.x > max.x
+            || current.y < min.y
+            || current.y > max.y
+        {
+            viewport
         } else {
-            vk::Extent2D {
-                width: viewport.x.clamp(
-                    capabilities.min_image_extent.width,
-                    capabilities.max_image_extent.width,
-                ),
-                height: viewport.y.clamp(
-                    capabilities.min_image_extent.height,
-                    capabilities.max_image_extent.height,
-                ),
-            }
+            current
+        };
+
+        vk::Extent2D {
+            width: desired.x.clamp(min.x, max.x),
+            height: desired.y.clamp(min.y, max.y),
         }
     }
 
     unsafe fn create_swapchain(
-        viewport: Option<glam::UVec2>,
+        viewport: glam::UVec2,
         entry: &ash::Entry,
         instance: &ash::Instance,
         device: &Device,
@@ -360,11 +378,6 @@ impl PresentationPipeline {
             surface_loader.get_physical_device_surface_formats(physical_device, surface)?;
         let present_modes =
             surface_loader.get_physical_device_surface_present_modes(physical_device, surface)?;
-
-        let viewport = viewport.unwrap_or(glam::UVec2::new(
-            capabilities.current_extent.width,
-            capabilities.current_extent.height,
-        ));
 
         // Select the best format and present mode
         let format =
@@ -751,13 +764,13 @@ impl PresentationPipeline {
         physical_device: vk::PhysicalDevice,
         viewport: glam::UVec2,
     ) -> anyhow::Result<()> {
-        if self.chain_extent.width != viewport.x || self.chain_extent.height != viewport.y {
+        if self.viewport != viewport {
             debug!(
                 "Resizing swapchain from {:?} to {:?}",
-                self.chain_extent, viewport
+                self.viewport, viewport
             );
-
-            return self.on_suboptimal(entry, instance, device, surface, physical_device, None);
+            self.viewport = viewport;
+            return self.on_suboptimal(entry, instance, device, surface, physical_device, viewport);
         }
 
         Ok(())
@@ -818,7 +831,7 @@ impl PresentationPipeline {
         device: &Device,
         surface: vk::SurfaceKHR,
         physical_device: vk::PhysicalDevice,
-        viewport: Option<glam::UVec2>,
+        viewport: glam::UVec2,
     ) -> anyhow::Result<()> {
         debug!("Swapchain is suboptimal, needs recreation");
 
@@ -923,7 +936,14 @@ impl PresentationPipeline {
         ) {
             Ok((index, false)) => index as usize,
             Ok((_, true)) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return self.on_suboptimal(entry, instance, device, surface, physical_device, None);
+                return self.on_suboptimal(
+                    entry,
+                    instance,
+                    device,
+                    surface,
+                    physical_device,
+                    self.viewport,
+                );
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
@@ -977,7 +997,14 @@ impl PresentationPipeline {
         {
             Ok(false) => {}
             Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return self.on_suboptimal(entry, instance, device, surface, physical_device, None);
+                return self.on_suboptimal(
+                    entry,
+                    instance,
+                    device,
+                    surface,
+                    physical_device,
+                    self.viewport,
+                );
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
