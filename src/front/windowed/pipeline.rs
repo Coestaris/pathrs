@@ -12,7 +12,7 @@ use gpu_allocator::vulkan::Allocator;
 use log::{debug, warn};
 use std::cell::RefCell;
 use std::ffi::CStr;
-use std::ops::{DerefMut, Index};
+use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};

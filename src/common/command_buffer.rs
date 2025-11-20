@@ -163,7 +163,7 @@ impl CommandBuffer {
         Ok(())
     }
 
-    pub fn as_submit_info(&self) -> vk::SubmitInfo {
+    pub fn as_submit_info(&self) -> vk::SubmitInfo<'_> {
         vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&self.command_buffer))
     }
 

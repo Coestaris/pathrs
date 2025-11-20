@@ -1,5 +1,5 @@
 use crate::back::pipeline::TracerPipeline;
-use crate::back::{Back, BackQueueFamilyIndices, BackQueues};
+use crate::back::{Back, BackQueues};
 use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
 use crate::common::queue::QueueFamily;
 use crate::config::TracerConfig;
