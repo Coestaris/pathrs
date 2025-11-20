@@ -2,6 +2,7 @@ use crate::config::TracerConfig;
 use crate::front::headless::headless_tracer;
 use crate::front::windowed::TracerApp;
 use crate::logging::setup_logging;
+use clap::builder::PossibleValuesParser;
 use clap::Parser;
 use glam::UVec2;
 use log::{info, LevelFilter};
@@ -18,7 +19,13 @@ mod tracer;
 build_info::build_info!(pub fn get_build_info);
 
 #[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
 struct Arguments {
+    #[clap(short = 'l', long, help = "Set the log level", value_parser = PossibleValuesParser::new(["error", "warn", "info", "debug", "trace"]))]
+    log_level: Option<String>,
+    #[clap(long, help = "Disable color output")]
+    no_color: bool,
+
     #[clap(long, default_value_t = 1280)]
     width: u32,
     #[clap(long, default_value_t = 720)]
@@ -34,9 +41,18 @@ struct Arguments {
 }
 
 fn main() -> anyhow::Result<()> {
-    setup_logging(LevelFilter::Debug, None, true);
-
     let args = Arguments::parse();
+
+    let log_level = match args.log_level.as_deref() {
+        Some("error") => LevelFilter::Error,
+        Some("warn") => LevelFilter::Warn,
+        Some("info") => LevelFilter::Info,
+        Some("debug") => LevelFilter::Debug,
+        Some("trace") => LevelFilter::Trace,
+        _ => LevelFilter::Debug,
+    };
+    setup_logging(log_level, None, !args.no_color);
+
     info!("Starting application with args: {:?}", args);
 
     let config = if args.config.is_some() {

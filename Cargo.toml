@@ -2,6 +2,8 @@
 name = "pathrs"
 version = "0.1.0"
 edition = "2021"
+description = "A Vulkan-based path tracing renderer written in Rust."
+license = "MIT"
 
 [build-dependencies]
 build-info-build = "0.0.42"
