@@ -265,6 +265,7 @@ impl<F: Front> Tracer<F> {
         debug!("Available instance layers: {:?}", layers);
 
         let mut required = vec![];
+        #[cfg(debug_assertions)]
         required.extend(DebugMessenger::get_required_instance_layers(
             &layers,
             compatibilities,
@@ -497,8 +498,9 @@ impl<F: Front> Tracer<F> {
         let mut front =
             constructor(&entry, &instance).context("Failed to create tracer front-end")?;
 
-        info!("Setting up debug messanger");
+        #[cfg(debug_assertions)]
         let debug_messenger = if DebugMessenger::available(&instance_compatibilities) {
+            info!("Setting up debug messanger");
             Some(
                 DebugMessenger::new(&entry, &instance)
                     .context("Failed to create debug messanger")?,
@@ -507,6 +509,8 @@ impl<F: Front> Tracer<F> {
             warn!("Debug messanger not supported on this system");
             None
         };
+        #[cfg(not(debug_assertions))]
+        let debug_messenger = None;
 
         info!("Creating logical device");
         let (allocator, back_queues, front_queues, physical_device, logical_device) =
