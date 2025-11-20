@@ -3,9 +3,9 @@ Path tracer using Vulkan in Rust
 
 TODO list:
 - [x] Draw a triangle
-- [ ] Draw a fullscreen quad in a Windowed frontend
+- [x] Draw a fullscreen quad in a Windowed frontend
 - [ ] Implement simple resource management for loading shaders, textures, models
-- [ ] Implement a basic compute shader that fills offscreen texture
+- [x] Implement a basic compute shader that fills offscreen texture
 - [x] Add [egui](https://github.com/emilk/egui) for debugging purposes
 - [ ] Implement a basic path tracing algorithm in the compute shader for spheres:
   - [ ] Intersection tests

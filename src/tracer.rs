@@ -1,3 +1,4 @@
+use crate::assets::AssetManager;
 use crate::back::pipeline::TracerPipeline;
 use crate::back::{Back, BackQueues};
 use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
@@ -485,6 +486,7 @@ impl<F: Front> Tracer<F> {
 
     pub(crate) unsafe fn new<D: Front>(
         config: TracerConfig,
+        asset_manager: AssetManager,
         viewport: UVec2,
         bi: BuildInfo,
         constructor: impl FnOnce(&Entry, &Instance) -> anyhow::Result<D>,
@@ -520,6 +522,7 @@ impl<F: Front> Tracer<F> {
         info!("Initializing back-end");
         let back = TracerPipeline::new(
             allocator.clone(),
+            asset_manager.clone(),
             viewport,
             &instance,
             physical_device,

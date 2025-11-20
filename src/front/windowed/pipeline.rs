@@ -1,3 +1,4 @@
+use crate::assets::AssetManager;
 use crate::back::pipeline::TracerSlot;
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
@@ -13,12 +14,13 @@ use log::{debug, warn};
 use std::cell::RefCell;
 use std::ffi::CStr;
 use std::ops::DerefMut;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::vec;
 use winit::window::Window;
 
+const FRAGMENT_ASSET: &str = "shaders/triangle.frag.spv";
+const VERTEX_ASSET: &str = "shaders/triangle.vert.spv";
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct PresentationPipeline {
@@ -62,6 +64,7 @@ pub struct PresentationPipeline {
 impl PresentationPipeline {
     pub(crate) unsafe fn new(
         allocator: Arc<Mutex<Allocator>>,
+        asset_manager: AssetManager,
         viewport: glam::UVec2,
         entry: &ash::Entry,
         instance: &ash::Instance,
@@ -87,14 +90,16 @@ impl PresentationPipeline {
         let image_views = Self::create_image_views(device, &images, format)?;
 
         debug!("Creating shaders");
-        let project_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
-        let assets_dir = project_root.join("assets");
-        let vert_shader =
-            Shader::new_from_file(device, assets_dir.join("shaders/triangle.vert.spv"))
-                .context("Failed to create vertex shader")?;
-        let frag_shader =
-            Shader::new_from_file(device, assets_dir.join("shaders/triangle.frag.spv"))
-                .context("Failed to create fragment shader")?;
+        let vert_shader = asset_manager
+            .load_asset(VERTEX_ASSET)
+            .context("Failed to load vertex shader asset")?;
+        let vert_shader = Shader::new_from_spirv(device, vert_shader.get_spirv()?)
+            .context("Failed to create vertex shader")?;
+        let frag_shader = asset_manager
+            .load_asset(FRAGMENT_ASSET)
+            .context("Failed to load fragment shader asset")?;
+        let frag_shader = Shader::new_from_spirv(device, frag_shader.get_spirv()?)
+            .context("Failed to create fragment shader")?;
 
         debug!("Creating pipeline layout and render pass");
         let render_pass =

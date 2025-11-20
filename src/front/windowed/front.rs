@@ -1,3 +1,4 @@
+use crate::assets::AssetManager;
 use crate::back::pipeline::TracerSlot;
 use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
 use crate::common::queue::QueueFamily;
@@ -169,6 +170,7 @@ impl Mode {
 }
 
 pub struct TracerWindowedFront {
+    asset_manager: AssetManager,
     surface: vk::SurfaceKHR,
     viewport: glam::UVec2,
     platform: Mode,
@@ -179,6 +181,7 @@ pub struct TracerWindowedFront {
 
 impl TracerWindowedFront {
     pub unsafe fn new(
+        asset_manager: AssetManager,
         entry: &ash::Entry,
         instance: &ash::Instance,
         viewport: glam::UVec2,
@@ -189,6 +192,7 @@ impl TracerWindowedFront {
         let mode = Mode::from_handles(window, display)?;
 
         Ok(Self {
+            asset_manager,
             surface: mode.create_surface(entry, instance)?,
             viewport,
             platform: mode,
@@ -322,6 +326,7 @@ impl Front for TracerWindowedFront {
         self.runtime = Some(
             PresentationPipeline::new(
                 allocator,
+                self.asset_manager.clone(),
                 self.viewport,
                 entry,
                 instance,

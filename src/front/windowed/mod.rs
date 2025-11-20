@@ -1,3 +1,4 @@
+use crate::assets::AssetManager;
 use crate::config::TracerConfig;
 use crate::fps::{FPSResult, FPS};
 use crate::front::windowed::front::TracerWindowedFront;
@@ -48,18 +49,25 @@ impl Context {
 
 pub struct TracerApp {
     build_info: BuildInfo,
+    asset_manager: AssetManager,
     viewport: UVec2,
     config: TracerConfig,
     context: Option<Context>,
 }
 
 impl TracerApp {
-    pub fn new(config: TracerConfig, initial_viewport: UVec2, bi: BuildInfo) -> Self {
+    pub fn new(
+        config: TracerConfig,
+        asset_manager: AssetManager,
+        initial_viewport: UVec2,
+        bi: BuildInfo,
+    ) -> Self {
         Self {
             viewport: initial_viewport,
             build_info: bi,
             context: None,
             config,
+            asset_manager,
         }
     }
 }
@@ -92,10 +100,12 @@ impl ApplicationHandler for TracerApp {
         let tracer = unsafe {
             Tracer::<TracerWindowedFront>::new(
                 self.config.clone(),
+                self.asset_manager.clone(),
                 self.viewport,
                 self.build_info.clone(),
                 |entry, instance| {
                     TracerWindowedFront::new(
+                        self.asset_manager.clone(),
                         entry,
                         instance,
                         self.viewport,

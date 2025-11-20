@@ -1,3 +1,4 @@
+use crate::assets::AssetManager;
 use crate::back::BackQueues;
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
@@ -10,9 +11,9 @@ use glam::FloatExt;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use log::{debug, warn};
 use std::ffi::CStr;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+const COMPUTE_ASSET: &str = "shaders/shader.comp.spv";
 const MAX_DEPTH: usize = 2;
 
 #[allow(dead_code)]
@@ -61,6 +62,7 @@ pub struct TracerPipeline {
 impl TracerPipeline {
     pub unsafe fn new(
         allocator: Arc<Mutex<Allocator>>,
+        asset_manager: AssetManager,
         viewport: glam::UVec2,
         instance: &ash::Instance,
         physical_device: PhysicalDevice,
@@ -84,11 +86,11 @@ impl TracerPipeline {
                 .context("Failed to create descriptor set layout")?;
 
         debug!("Creating compute shader");
-        let project_root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
-        let assets_dir = project_root.join("assets");
-        let compute_shader =
-            Shader::new_from_file(device, assets_dir.join("shaders/shader.comp.spv"))
-                .context("Failed to create compute shader")?;
+        let compute_shader = asset_manager
+            .load_asset(COMPUTE_ASSET)
+            .context("Failed to load compute shader asset")?;
+        let compute_shader = Shader::new_from_spirv(device, compute_shader.get_spirv()?)
+            .context("Failed to create compute shader")?;
 
         let entrypoint = CStr::from_bytes_with_nul(b"main\0")?;
         let stage = vk::PipelineShaderStageCreateInfo::default()

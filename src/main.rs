@@ -1,3 +1,4 @@
+use crate::assets::AssetManager;
 use crate::config::TracerConfig;
 use crate::front::headless::headless_tracer;
 use crate::front::windowed::TracerApp;
@@ -8,6 +9,7 @@ use glam::UVec2;
 use log::{info, LevelFilter};
 use winit::event_loop::{ControlFlow, EventLoop};
 
+mod assets;
 mod back;
 mod common;
 mod config;
@@ -64,11 +66,17 @@ fn main() -> anyhow::Result<()> {
         TracerConfig::default()
     };
 
+    let asset_manager = AssetManager::new_from_pwd(&std::env::current_dir()?)?;
+
     let viewport = UVec2::new(args.width, args.height);
     if args.headless {
         unsafe {
-            let mut tracer =
-                headless_tracer(config, viewport, get_build_info().clone(), |output| {
+            let mut tracer = headless_tracer(
+                config,
+                asset_manager,
+                viewport,
+                get_build_info().clone(),
+                |output| {
                     // TODO: Save to file or process output
                     info!(
                         "Received headless output: {}x{}, {} bytes",
@@ -76,13 +84,14 @@ fn main() -> anyhow::Result<()> {
                         output.height,
                         output.rgb888.len()
                     );
-                })?;
+                },
+            )?;
             tracer.trace(None)?;
         }
     } else {
         let event_loop = EventLoop::new()?;
         event_loop.set_control_flow(ControlFlow::Wait);
-        let mut app = TracerApp::new(config, viewport, get_build_info().clone());
+        let mut app = TracerApp::new(config, asset_manager, viewport, get_build_info().clone());
         event_loop.run_app(&mut app)?;
     }
 
