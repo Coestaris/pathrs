@@ -355,7 +355,7 @@ impl PresentationPipeline {
         // Fetch information about the surface
         let capabilities =
             surface_loader.get_physical_device_surface_capabilities(physical_device, surface)?;
-        println!("Surface capabilities: {:?}", capabilities);
+        debug!("Surface capabilities: {:?}", capabilities);
         let formats =
             surface_loader.get_physical_device_surface_formats(physical_device, surface)?;
         let present_modes =
