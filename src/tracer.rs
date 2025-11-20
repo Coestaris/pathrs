@@ -15,6 +15,7 @@ use log::{debug, info, warn};
 use std::ffi::{c_char, CStr, CString};
 use std::sync::{Arc, Mutex};
 
+#[derive(Debug, Default, Clone)]
 pub struct TracerProfile {
     pub fps: FPSResult,
     pub render_time: f32,
@@ -517,6 +518,7 @@ impl<F: Front> Tracer<F> {
             viewport,
             &entry,
             &instance,
+            physical_device,
             &logical_device,
             back_queues,
         )

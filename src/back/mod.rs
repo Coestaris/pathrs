@@ -89,7 +89,11 @@ impl Back {
     ) -> anyhow::Result<ash::Device> {
         let mut device_address_info =
             vk::PhysicalDeviceBufferDeviceAddressFeatures::default().buffer_device_address(true);
-        let create_info = create_info.push_next(&mut device_address_info);
+        let mut host_query_reset_info =
+            vk::PhysicalDeviceHostQueryResetFeatures::default().host_query_reset(true);
+        let create_info = create_info
+            .push_next(&mut device_address_info)
+            .push_next(&mut host_query_reset_info);
         on_patched(create_info)
     }
 
@@ -108,7 +112,9 @@ impl Back {
                     graphics_queue_index = Some(i as u32);
                 }
 
-                if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
+                if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE)
+                    && queue_family.timestamp_valid_bits > 0
+                {
                     compute_queue_index = Some(i as u32);
                 }
             }

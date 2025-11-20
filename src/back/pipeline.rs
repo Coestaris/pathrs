@@ -4,8 +4,10 @@ use crate::common::shader::Shader;
 use crate::fps::{FPSResult, FPS};
 use crate::tracer::TracerProfile;
 use anyhow::Context;
-use ash::vk::Extent2D;
-use ash::{vk, Device};
+use ash::prelude::VkResult;
+use ash::vk::{Extent2D, PhysicalDevice};
+use ash::{vk, Device, Instance};
+use glam::FloatExt;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use log::{debug, warn};
 use std::ffi::CStr;
@@ -27,11 +29,14 @@ pub struct TracerPipeline {
     allocator: Arc<Mutex<Allocator>>,
     destroyed: bool,
     fps: FPS,
-    fps_result: FPSResult,
+    profile: TracerProfile,
 
     descriptor_set_layout: vk::DescriptorSetLayout,
     descriptor_pool: vk::DescriptorPool,
     descriptor_sets: Vec<vk::DescriptorSet>, // Size = MAX_DEPTH
+
+    query_pool: vk::QueryPool,
+    timestamp_period: f32,
 
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -45,11 +50,9 @@ pub struct TracerPipeline {
     image_allocations: Vec<Option<Allocation>>, // size = MAX_DEPTH
 
     fences: Vec<vk::Fence>, // size = MAX_DEPTH
-    render_finished_semaphores: Vec<vk::Semaphore>,
 
     current_frame: usize,
     last_finished_frame: Option<usize>,
-
     viewport: glam::UVec2,
 
     compute_shader: Shader,
@@ -61,6 +64,7 @@ impl TracerPipeline {
         viewport: glam::UVec2,
         entry: &ash::Entry,
         instance: &ash::Instance,
+        physical_device: PhysicalDevice,
         device: &Device,
         queues: BackQueues,
     ) -> anyhow::Result<(Self, Vec<TracerSlot>)> {
@@ -99,8 +103,11 @@ impl TracerPipeline {
                 .context("Failed to create pipeline")?;
 
         debug!("Creating sync objects");
-        let (fences, render_finished_semaphores) =
-            Self::create_sync_objects(device).context("Failed to create fences")?;
+        let fences = Self::create_sync_objects(device).context("Failed to create fences")?;
+
+        debug!("Creating query pool");
+        let (query_pool, timestamp_period) =
+            Self::create_query_pool(instance, physical_device, device)?;
 
         let slots = (0..MAX_DEPTH)
             .map(|i| TracerSlot {
@@ -118,10 +125,13 @@ impl TracerPipeline {
                 allocator,
                 destroyed: false,
                 fps: FPS::new(),
-                fps_result: FPSResult::Cached(0.0),
+
+                profile: TracerProfile::default(),
                 descriptor_set_layout,
                 descriptor_pool,
                 descriptor_sets,
+                query_pool,
+                timestamp_period,
                 pipeline_layout,
                 pipeline,
                 command_pool,
@@ -131,7 +141,6 @@ impl TracerPipeline {
                 image_samplers,
                 image_allocations: image_allocations.into_iter().map(Some).collect(),
                 fences,
-                render_finished_semaphores,
                 current_frame: 0,
                 last_finished_frame: None,
                 viewport,
@@ -141,9 +150,25 @@ impl TracerPipeline {
         ))
     }
 
-    unsafe fn create_sync_objects(
+    unsafe fn create_query_pool(
+        instance: &Instance,
+        physical_device: PhysicalDevice,
         device: &Device,
-    ) -> anyhow::Result<(Vec<vk::Fence>, Vec<vk::Semaphore>)> {
+    ) -> anyhow::Result<(vk::QueryPool, f32)> {
+        let query_pool_info = vk::QueryPoolCreateInfo::default()
+            .query_type(vk::QueryType::TIMESTAMP)
+            .query_count(2);
+        let query_pool = device.create_query_pool(&query_pool_info, None)?;
+
+        device.reset_query_pool(query_pool, 0, 2);
+
+        let props = instance.get_physical_device_properties(physical_device);
+        let timestamp_period = props.limits.timestamp_period;
+
+        Ok((query_pool, timestamp_period))
+    }
+
+    unsafe fn create_sync_objects(device: &Device) -> anyhow::Result<Vec<vk::Fence>> {
         let mut fences = Vec::with_capacity(MAX_DEPTH);
         let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
         for _ in 0..MAX_DEPTH {
@@ -151,14 +176,7 @@ impl TracerPipeline {
             fences.push(fence);
         }
 
-        let semaphore_info = vk::SemaphoreCreateInfo::default();
-        let mut semaphores = Vec::with_capacity(MAX_DEPTH);
-        for _ in 0..MAX_DEPTH {
-            let semaphore = device.create_semaphore(&semaphore_info, None)?;
-            semaphores.push(semaphore);
-        }
-
-        Ok((fences, semaphores))
+        Ok(fences)
     }
 
     unsafe fn create_images(
@@ -367,10 +385,21 @@ impl TracerPipeline {
         command_buffer: &CommandBuffer,
         descriptor_set: vk::DescriptorSet,
         image: vk::Image,
+        need_timestamp: bool,
         extent: Extent2D,
     ) -> anyhow::Result<()> {
         command_buffer.reset(device)?;
         command_buffer.begin(device)?;
+
+        if need_timestamp {
+            device.cmd_reset_query_pool(command_buffer.as_inner(), self.query_pool, 0, 2);
+            device.cmd_write_timestamp(
+                command_buffer.as_inner(),
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                self.query_pool,
+                0,
+            );
+        }
 
         command_buffer.bind_pipeline(device, vk::PipelineBindPoint::COMPUTE, self.pipeline);
         command_buffer.bind_descriptor_sets(
@@ -415,6 +444,15 @@ impl TracerPipeline {
             &[barrier],
         );
 
+        if need_timestamp {
+            device.cmd_write_timestamp(
+                command_buffer.as_inner(),
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                self.query_pool,
+                1,
+            );
+        }
+
         command_buffer.end(device)?;
 
         Ok(())
@@ -425,6 +463,7 @@ impl TracerPipeline {
         entry: &ash::Entry,
         instance: &ash::Instance,
         device: &Device,
+        need_timestamp: bool,
         index: usize,
     ) -> anyhow::Result<()> {
         device.reset_fences(&[self.fences[index]])?;
@@ -435,6 +474,7 @@ impl TracerPipeline {
             &*buffer_ptr,
             self.descriptor_sets[index],
             self.images[index],
+            need_timestamp,
             vk::Extent2D {
                 width: self.viewport.x,
                 height: self.viewport.y,
@@ -442,12 +482,9 @@ impl TracerPipeline {
         )?;
 
         // Submit
-        let signal_semaphores = [self.render_finished_semaphores[index]];
         let command_buffers = vec![self.command_buffers[index].as_inner()];
 
-        let submit_info = vk::SubmitInfo::default()
-            .signal_semaphores(&signal_semaphores)
-            .command_buffers(&command_buffers);
+        let submit_info = vk::SubmitInfo::default().command_buffers(&command_buffers);
         device.queue_submit(
             self.queues.compute_queue,
             &[submit_info],
@@ -455,6 +492,25 @@ impl TracerPipeline {
         )?;
 
         Ok(())
+    }
+
+    unsafe fn fetch_render_time(&mut self, device: &Device) -> anyhow::Result<Option<f32>> {
+        let mut timestamps = vec![0u64; 2];
+
+        match device.get_query_pool_results(
+            self.query_pool,
+            0,
+            &mut timestamps,
+            vk::QueryResultFlags::TYPE_64,
+        ) {
+            Ok(()) => {
+                let delta = timestamps[1] - timestamps[0];
+                let render_time_ms = (delta as f64 * self.timestamp_period as f64) / 1_000_000.0;
+                Ok(Some(render_time_ms as f32))
+            }
+            Err(ash::vk::Result::NOT_READY) => Ok(None),
+            Err(e) => Err(anyhow::anyhow!("Failed to get query pool results: {:?}", e)),
+        }
     }
 
     pub unsafe fn present(
@@ -466,7 +522,13 @@ impl TracerPipeline {
         let current_frame = self.current_frame;
         let status = device.get_fence_status(self.fences[current_frame])?;
         if status {
-            self.enqueue_new_frame(entry, instance, device, current_frame)?;
+            let mut need_timestamp = matches!(self.last_finished_frame, None);
+            if let Some(ms) = self.fetch_render_time(device)? {
+                self.profile.render_time = self.profile.render_time.lerp(ms, 0.1);
+                need_timestamp = true;
+            }
+
+            self.enqueue_new_frame(entry, instance, device, need_timestamp, current_frame)?;
 
             // If it's the first frame, we need to wait for the first frame
             // to finish rendering before we can present it.
@@ -475,7 +537,7 @@ impl TracerPipeline {
                 device.wait_for_fences(&[self.fences[current_frame]], true, u64::MAX)?;
             }
 
-            self.fps_result = self.fps.update();
+            self.profile.fps = self.fps.update();
 
             self.last_finished_frame = Some(current_frame);
             self.current_frame = (self.current_frame + 1) % MAX_DEPTH;
@@ -571,9 +633,6 @@ impl TracerPipeline {
             for fence in &self.fences {
                 device.destroy_fence(*fence, None);
             }
-            for semaphore in &self.render_finished_semaphores {
-                device.destroy_semaphore(*semaphore, None);
-            }
 
             debug!("Destroying command pool");
             for cmd_buf in &mut self.command_buffers {
@@ -610,6 +669,9 @@ impl TracerPipeline {
             debug!("Destroying descriptor pool");
             device.destroy_descriptor_pool(self.descriptor_pool, None);
 
+            debug!("Destroying query pool");
+            device.destroy_query_pool(self.query_pool, None);
+
             self.destroyed = true;
         } else {
             warn!("TracerPipeline already destroyed");
@@ -617,10 +679,7 @@ impl TracerPipeline {
     }
 
     pub fn get_profile(&self) -> TracerProfile {
-        TracerProfile {
-            fps: self.fps_result,
-            render_time: 0.0,
-        }
+        self.profile.clone()
     }
 }
 

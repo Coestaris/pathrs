@@ -8,6 +8,12 @@ pub enum FPSResult {
     Cached(f32),
 }
 
+impl Default for FPSResult {
+    fn default() -> Self {
+        Self::Cached(0.0)
+    }
+}
+
 impl FPSResult {
     pub fn fps(self) -> f32 {
         match self {
