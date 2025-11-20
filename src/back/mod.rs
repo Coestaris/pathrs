@@ -42,6 +42,7 @@ pub struct BackQueueFamilyIndices {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct BackQueues {
     pub indices: BackQueueFamilyIndices,
     pub graphics_queue: vk::Queue,

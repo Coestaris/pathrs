@@ -318,7 +318,6 @@ impl Front for TracerWindowedFront {
         physical_device: vk::PhysicalDevice,
         queues: WindowedQueues,
         allocator: Arc<Mutex<Allocator>>,
-        slots: Vec<TracerSlot>,
     ) -> anyhow::Result<()> {
         self.runtime = Some(
             PresentationPipeline::new(
@@ -331,7 +330,6 @@ impl Front for TracerWindowedFront {
                 physical_device,
                 queues,
                 self.ui.clone(),
-                slots,
             )
             .context("Failed to create windowed runtime")?,
         );

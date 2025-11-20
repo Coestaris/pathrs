@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 const MAX_DEPTH: usize = 2;
 
+#[allow(dead_code)]
 pub struct TracerSlot {
     pub image: vk::Image,
     pub image_view: vk::ImageView,
@@ -61,12 +62,11 @@ impl TracerPipeline {
     pub unsafe fn new(
         allocator: Arc<Mutex<Allocator>>,
         viewport: glam::UVec2,
-        entry: &ash::Entry,
         instance: &ash::Instance,
         physical_device: PhysicalDevice,
         device: &Device,
         queues: BackQueues,
-    ) -> anyhow::Result<(Self, Vec<TracerSlot>)> {
+    ) -> anyhow::Result<Self> {
         let (command_pool, command_buffers) = Self::create_command_buffers(device, &queues)
             .context("Failed to create command buffers")?;
 
@@ -108,45 +108,32 @@ impl TracerPipeline {
         let (query_pool, timestamp_period) =
             Self::create_query_pool(instance, physical_device, device)?;
 
-        let slots = (0..MAX_DEPTH)
-            .map(|i| TracerSlot {
-                image: images[i],
-                image_view: image_views[i],
-                sampler: image_samplers[i],
-                descriptor_set: descriptor_sets[i],
-                index: i,
-            })
-            .collect();
+        Ok(Self {
+            queues,
+            allocator,
+            destroyed: false,
+            fps: FPS::new(),
 
-        Ok((
-            Self {
-                queues,
-                allocator,
-                destroyed: false,
-                fps: FPS::new(),
-
-                profile: TracerProfile::default(),
-                descriptor_set_layout,
-                descriptor_pool,
-                descriptor_sets,
-                query_pool,
-                timestamp_period,
-                pipeline_layout,
-                pipeline,
-                command_pool,
-                command_buffers,
-                images,
-                image_views,
-                image_samplers,
-                image_allocations: image_allocations.into_iter().map(Some).collect(),
-                fences,
-                current_frame: 0,
-                last_finished_frame: None,
-                viewport,
-                compute_shader,
-            },
-            slots,
-        ))
+            profile: TracerProfile::default(),
+            descriptor_set_layout,
+            descriptor_pool,
+            descriptor_sets,
+            query_pool,
+            timestamp_period,
+            pipeline_layout,
+            pipeline,
+            command_pool,
+            command_buffers,
+            images,
+            image_views,
+            image_samplers,
+            image_allocations: image_allocations.into_iter().map(Some).collect(),
+            fences,
+            current_frame: 0,
+            last_finished_frame: None,
+            viewport,
+            compute_shader,
+        })
     }
 
     unsafe fn create_query_pool(
@@ -459,8 +446,6 @@ impl TracerPipeline {
 
     unsafe fn enqueue_new_frame(
         &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
         device: &Device,
         need_timestamp: bool,
         index: usize,
@@ -512,12 +497,7 @@ impl TracerPipeline {
         }
     }
 
-    pub unsafe fn present(
-        &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
-    ) -> anyhow::Result<TracerSlot> {
+    pub unsafe fn present(&mut self, device: &Device) -> anyhow::Result<TracerSlot> {
         let current_frame = self.current_frame;
         let status = device.get_fence_status(self.fences[current_frame])?;
         if status {
@@ -527,7 +507,7 @@ impl TracerPipeline {
                 need_timestamp = true;
             }
 
-            self.enqueue_new_frame(entry, instance, device, need_timestamp, current_frame)?;
+            self.enqueue_new_frame(device, need_timestamp, current_frame)?;
 
             // If it's the first frame, we need to wait for the first frame
             // to finish rendering before we can present it.
@@ -556,14 +536,7 @@ impl TracerPipeline {
         }
     }
 
-    pub unsafe fn resize(
-        &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
-        physical_device: vk::PhysicalDevice,
-        size: glam::UVec2,
-    ) -> anyhow::Result<()> {
+    pub unsafe fn resize(&mut self, device: &Device, size: glam::UVec2) -> anyhow::Result<()> {
         if self.viewport != size {
             debug!(
                 "Resizing TracerPipeline from {:?} to {:?}",
@@ -618,12 +591,7 @@ impl TracerPipeline {
         Ok(())
     }
 
-    pub unsafe fn destroy(
-        &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
-    ) {
+    pub unsafe fn destroy(&mut self, device: &Device) {
         if !self.destroyed {
             debug!("Waiting for device to be idle before destroying runtime");
             device.device_wait_idle().unwrap();

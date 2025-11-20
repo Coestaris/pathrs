@@ -108,32 +108,32 @@ where
 struct TracerSubscriber;
 
 impl Subscriber for TracerSubscriber {
-    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+    fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
         // Disable tracing for now since it's too verbose and not really useful
         false
     }
 
-    fn new_span(&self, span: &Attributes<'_>) -> Id {
+    fn new_span(&self, _span: &Attributes<'_>) -> Id {
         unreachable!()
     }
 
-    fn record(&self, span: &Id, values: &Record<'_>) {
+    fn record(&self, _span: &Id, _values: &Record<'_>) {
         unreachable!()
     }
 
-    fn record_follows_from(&self, span: &Id, follows: &Id) {
+    fn record_follows_from(&self, _span: &Id, _follows: &Id) {
         unreachable!()
     }
 
-    fn event(&self, event: &Event<'_>) {
+    fn event(&self, _event: &Event<'_>) {
         unreachable!()
     }
 
-    fn enter(&self, span: &Id) {
+    fn enter(&self, _span: &Id) {
         unreachable!()
     }
 
-    fn exit(&self, span: &Id) {
+    fn exit(&self, _span: &Id) {
         unreachable!()
     }
 }

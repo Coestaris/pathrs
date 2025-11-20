@@ -21,50 +21,51 @@ pub struct TracerProfile {
     pub render_time: f32,
 }
 
-unsafe extern "system" fn debug_callback(
-    message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
-    message_types: vk::DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
-    _p_user_data: *mut std::ffi::c_void,
-) -> vk::Bool32 {
-    let message = CStr::from_ptr((*p_callback_data).p_message);
-    let level = if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR) {
-        log::Level::Error
-    } else if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::WARNING) {
-        log::Level::Warn
-    } else if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE) {
-        log::Level::Debug
-    } else {
-        log::Level::Info
-    };
-
-    let mtype = if message_types.contains(vk::DebugUtilsMessageTypeFlagsEXT::GENERAL) {
-        "GENERAL"
-    } else if message_types.contains(vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION) {
-        "VALIDATION"
-    } else if message_types.contains(vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE) {
-        "PERFORMANCE"
-    } else {
-        "UNKNOWN"
-    };
-
-    match level {
-        log::Level::Error => warn!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
-        log::Level::Warn => info!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
-        log::Level::Debug => debug!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
-        log::Level::Info => info!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
-        _ => unreachable!(),
-    }
-
-    vk::FALSE
-}
-
 pub struct DebugMessenger {
     handle: vk::DebugUtilsMessengerEXT,
     destroyed: bool,
 }
 
+#[allow(dead_code)]
 impl DebugMessenger {
+    unsafe extern "system" fn debug_callback(
+        message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+        message_types: vk::DebugUtilsMessageTypeFlagsEXT,
+        p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
+        _p_user_data: *mut std::ffi::c_void,
+    ) -> vk::Bool32 {
+        let message = CStr::from_ptr((*p_callback_data).p_message);
+        let level = if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR) {
+            log::Level::Error
+        } else if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::WARNING) {
+            log::Level::Warn
+        } else if message_severity.contains(vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE) {
+            log::Level::Debug
+        } else {
+            log::Level::Info
+        };
+
+        let mtype = if message_types.contains(vk::DebugUtilsMessageTypeFlagsEXT::GENERAL) {
+            "GENERAL"
+        } else if message_types.contains(vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION) {
+            "VALIDATION"
+        } else if message_types.contains(vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE) {
+            "PERFORMANCE"
+        } else {
+            "UNKNOWN"
+        };
+
+        match level {
+            log::Level::Error => warn!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
+            log::Level::Warn => info!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
+            log::Level::Debug => debug!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
+            log::Level::Info => info!("[vulkan] {}: {}", mtype, message.to_string_lossy()),
+            _ => unreachable!(),
+        }
+
+        vk::FALSE
+    }
+
     pub(super) unsafe fn get_required_instance_extensions(
         available: &Vec<String>,
         compatibilities: &mut InstanceCompatibilities,
@@ -122,7 +123,7 @@ impl DebugMessenger {
                     | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
                     | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
             )
-            .pfn_user_callback(Some(debug_callback));
+            .pfn_user_callback(Some(Self::debug_callback));
 
         let debug_messenger = debug_utils_loader
             .create_debug_utils_messenger(&create_info, None)
@@ -492,14 +493,14 @@ impl<F: Front> Tracer<F> {
         let entry = Self::new_entry()?;
 
         info!("Created Vulkan entry");
-        let (instance, instance_compatibilities) = Self::new_instance(&entry, bi)?;
+        let (instance, _instance_compatibilities) = Self::new_instance(&entry, bi)?;
 
         info!("Created Front");
         let mut front =
             constructor(&entry, &instance).context("Failed to create tracer front-end")?;
 
         #[cfg(debug_assertions)]
-        let debug_messenger = if DebugMessenger::available(&instance_compatibilities) {
+        let debug_messenger = if DebugMessenger::available(&_instance_compatibilities) {
             info!("Setting up debug messanger");
             Some(
                 DebugMessenger::new(&entry, &instance)
@@ -517,10 +518,9 @@ impl<F: Front> Tracer<F> {
             Tracer::<D>::new_device(&entry, &instance, &mut front)?;
 
         info!("Initializing back-end");
-        let (back, slots) = TracerPipeline::new(
+        let back = TracerPipeline::new(
             allocator.clone(),
             viewport,
-            &entry,
             &instance,
             physical_device,
             &logical_device,
@@ -536,7 +536,6 @@ impl<F: Front> Tracer<F> {
             physical_device,
             front_queues,
             allocator.clone(),
-            slots,
         )?;
 
         Ok(Tracer {
@@ -558,7 +557,7 @@ impl<F: Front> Tracer<F> {
             .back
             .as_mut()
             .unwrap()
-            .present(&self.entry, &self.instance, &self.logical_device)
+            .present(&self.logical_device)
             .context("Failed to present tracer back-end")?;
 
         self.front
@@ -583,13 +582,7 @@ impl<F: Front> Tracer<F> {
         self.back
             .as_mut()
             .unwrap()
-            .resize(
-                &self.entry,
-                &self.instance,
-                &self.logical_device,
-                self.physical_device,
-                size,
-            )
+            .resize(&self.logical_device, size)
             .with_context(|| format!("Failed to resize tracer back-end to {:?}", size))?;
 
         self.front
@@ -617,7 +610,7 @@ impl<F: Front> Drop for Tracer<F> {
         unsafe {
             if let Some(mut back) = self.back.take() {
                 debug!("Destroying back-end");
-                back.destroy(&self.entry, &self.instance, &self.logical_device);
+                back.destroy(&self.logical_device);
             }
 
             if let Some(mut front) = self.front.take() {

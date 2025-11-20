@@ -70,7 +70,6 @@ impl PresentationPipeline {
         physical_device: vk::PhysicalDevice,
         queues: WindowedQueues,
         ui: Rc<RefCell<UICompositor>>,
-        slots: Vec<TracerSlot>,
     ) -> anyhow::Result<Self> {
         debug!("Creating swapchain");
         let (swapchain, images, format, extent) = Self::create_swapchain(

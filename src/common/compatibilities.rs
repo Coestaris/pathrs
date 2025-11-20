@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 pub struct InstanceCompatibilities {
     pub debug_utils_ext: bool,
     pub validation_layer: bool,

@@ -77,7 +77,6 @@ pub trait Front {
         _physical_device: vk::PhysicalDevice,
         _queues: <<Self as Front>::FrontQueueFamilyIndices as QueueFamilyIndices>::Queues,
         _allocator: Arc<Mutex<Allocator>>,
-        _slots: Vec<TracerSlot>,
     ) -> anyhow::Result<()> {
         Ok(())
     }

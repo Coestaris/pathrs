@@ -61,7 +61,7 @@ impl Front for TracerHeadlessFront {
         _instance: &Instance,
         _device: &Device,
         _physical_device: PhysicalDevice,
-        slot: TracerSlot,
+        _slot: TracerSlot,
     ) -> anyhow::Result<()> {
         info!("Presenting frame");
 
