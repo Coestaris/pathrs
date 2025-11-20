@@ -17,7 +17,7 @@ impl UICompositor {
             visuals.window_fill.r(),
             visuals.window_fill.g(),
             visuals.window_fill.b(),
-            200,
+            255,
         );
         visuals.panel_fill = visuals.window_fill;
 
@@ -52,13 +52,10 @@ impl UICompositor {
             .resizable(true)
             .show(ctx, |ui| {
                 ui.label(format!("FPS: {:.2}", self.fps));
-                ui.separator();
-                ui.collapsing("Profiler", |ui| {
-                    if let Some(profile) = &self.tracer_profile {
-                        ui.label(format!("Traces per sec: {:.2}", profile.fps.fps()));
-                        ui.label(format!("Render time: {:.2}", profile.render_time));
-                    }
-                });
+                if let Some(profile) = &self.tracer_profile {
+                    ui.label(format!("Traces per sec: {:.2}", profile.fps.fps()));
+                    ui.label(format!("Render time: {:.2}", profile.render_time));
+                }
 
                 ui.collapsing("Tracer Controls", |ui| {
                     ui.label("Tracer Controls go here");

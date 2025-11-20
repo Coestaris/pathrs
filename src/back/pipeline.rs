@@ -524,7 +524,7 @@ impl TracerPipeline {
         if status {
             let mut need_timestamp = matches!(self.last_finished_frame, None);
             if let Some(ms) = self.fetch_render_time(device)? {
-                self.profile.render_time = self.profile.render_time.lerp(ms, 0.1);
+                self.profile.render_time = self.profile.render_time.lerp(ms, 0.01);
                 need_timestamp = true;
             }
 
