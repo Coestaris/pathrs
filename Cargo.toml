@@ -28,4 +28,4 @@ egui-winit = "0.33.0"
 egui-ash-renderer = { version = "0.10.0", features = ["gpu-allocator"] }
 
 [patch.crates-io]
-gpu-allocator = { git = "https://github.com/Coestaris/gpu-allocator", branch = "main" }
+gpu-allocator = { git = "https://github.com/Coestaris/gpu-allocator", rev = "3a0b82b072ece0f27abbb7afb84b50a0b5c87598" }
