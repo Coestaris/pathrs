@@ -5,6 +5,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Instant, SystemTime};
+use tracing::span::{Attributes, Record};
+use tracing::{Event, Id, Metadata, Subscriber};
 
 fn format_system_time(system_time: SystemTime) -> Option<String> {
     let datetime: chrono::DateTime<chrono::Utc> = system_time.into();
@@ -103,8 +105,43 @@ where
     format_inner::<F, true>(message, record, callback);
 }
 
+struct TracerSubscriber;
+
+impl Subscriber for TracerSubscriber {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        // Disable tracing for now since it's too verbose and not really useful
+        false
+    }
+
+    fn new_span(&self, span: &Attributes<'_>) -> Id {
+        unreachable!()
+    }
+
+    fn record(&self, span: &Id, values: &Record<'_>) {
+        unreachable!()
+    }
+
+    fn record_follows_from(&self, span: &Id, follows: &Id) {
+        unreachable!()
+    }
+
+    fn event(&self, event: &Event<'_>) {
+        unreachable!()
+    }
+
+    fn enter(&self, span: &Id) {
+        unreachable!()
+    }
+
+    fn exit(&self, span: &Id) {
+        unreachable!()
+    }
+}
+
 pub fn setup_logging(level: LevelFilter, file_logging: Option<PathBuf>, colored: bool) {
     START_TIME.set(Instant::now()).ok();
+
+    tracing::subscriber::set_global_default(TracerSubscriber).ok();
 
     let mut dispatch = fern::Dispatch::new().level(level).chain(std::io::stdout());
 
