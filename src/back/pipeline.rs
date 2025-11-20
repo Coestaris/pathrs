@@ -1,6 +1,8 @@
 use crate::back::{Back, BackQueues};
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
+use crate::fps::{FPSResult, FPS};
+use crate::tracer::TracerProfile;
 use anyhow::Context;
 use ash::vk::Extent2D;
 use ash::{vk, Device};
@@ -16,7 +18,6 @@ pub struct TracerSlot {
     pub image: vk::Image,
     pub image_view: vk::ImageView,
     pub sampler: vk::Sampler,
-    pub semaphore: vk::Semaphore,
     pub descriptor_set: vk::DescriptorSet,
     pub index: usize,
 }
@@ -25,6 +26,8 @@ pub struct TracerPipeline {
     queues: BackQueues,
     allocator: Arc<Mutex<Allocator>>,
     destroyed: bool,
+    fps: FPS,
+    fps_result: FPSResult,
 
     descriptor_set_layout: vk::DescriptorSetLayout,
     descriptor_pool: vk::DescriptorPool,
@@ -45,6 +48,8 @@ pub struct TracerPipeline {
     render_finished_semaphores: Vec<vk::Semaphore>,
 
     current_frame: usize,
+    last_finished_frame: Option<usize>,
+
     viewport: glam::UVec2,
 
     compute_shader: Shader,
@@ -102,7 +107,6 @@ impl TracerPipeline {
                 image: images[i],
                 image_view: image_views[i],
                 sampler: image_samplers[i],
-                semaphore: render_finished_semaphores[i],
                 descriptor_set: descriptor_sets[i],
                 index: i,
             })
@@ -113,6 +117,8 @@ impl TracerPipeline {
                 queues,
                 allocator,
                 destroyed: false,
+                fps: FPS::new(),
+                fps_result: FPSResult::Cached(0.0),
                 descriptor_set_layout,
                 descriptor_pool,
                 descriptor_sets,
@@ -127,6 +133,7 @@ impl TracerPipeline {
                 fences,
                 render_finished_semaphores,
                 current_frame: 0,
+                last_finished_frame: None,
                 viewport,
                 compute_shader,
             },
@@ -413,58 +420,79 @@ impl TracerPipeline {
         Ok(())
     }
 
+    unsafe fn enqueue_new_frame(
+        &mut self,
+        entry: &ash::Entry,
+        instance: &ash::Instance,
+        device: &Device,
+        index: usize,
+    ) -> anyhow::Result<()> {
+        device.reset_fences(&[self.fences[index]])?;
+
+        let buffer_ptr: *mut CommandBuffer = &mut self.command_buffers[index];
+        self.record_command_buffer(
+            device,
+            &*buffer_ptr,
+            self.descriptor_sets[index],
+            self.images[index],
+            vk::Extent2D {
+                width: self.viewport.x,
+                height: self.viewport.y,
+            },
+        )?;
+
+        // Submit
+        let signal_semaphores = [self.render_finished_semaphores[index]];
+        let command_buffers = vec![self.command_buffers[index].as_inner()];
+
+        let submit_info = vk::SubmitInfo::default()
+            .signal_semaphores(&signal_semaphores)
+            .command_buffers(&command_buffers);
+        device.queue_submit(
+            self.queues.compute_queue,
+            &[submit_info],
+            self.fences[index],
+        )?;
+
+        Ok(())
+    }
+
     pub unsafe fn present(
         &mut self,
         entry: &ash::Entry,
         instance: &ash::Instance,
         device: &Device,
     ) -> anyhow::Result<TracerSlot> {
-        // If the current frame is not ready, return early
-        let status = device.get_fence_status(self.fences[self.current_frame])?;
-        let (sem, idx) = if status {
-            device.reset_fences(&[self.fences[self.current_frame]])?;
+        let current_frame = self.current_frame;
+        let status = device.get_fence_status(self.fences[current_frame])?;
+        if status {
+            self.enqueue_new_frame(entry, instance, device, current_frame)?;
 
-            let buffer_ptr: *mut CommandBuffer = &mut self.command_buffers[self.current_frame];
-            self.record_command_buffer(
-                device,
-                &*buffer_ptr,
-                self.descriptor_sets[self.current_frame],
-                self.images[self.current_frame],
-                vk::Extent2D {
-                    width: self.viewport.x,
-                    height: self.viewport.y,
-                },
-            )?;
+            // If it's the first frame, we need to wait for the first frame
+            // to finish rendering before we can present it.
+            if matches!(self.last_finished_frame, None) {
+                debug!("Waiting for first frame to finish rendering");
+                device.wait_for_fences(&[self.fences[current_frame]], true, u64::MAX)?;
+            }
 
-            // Submit
-            let signal_semaphores = [self.render_finished_semaphores[self.current_frame]];
-            let command_buffers = vec![self.command_buffers[self.current_frame].as_inner()];
+            self.fps_result = self.fps.update();
 
-            let submit_info = vk::SubmitInfo::default()
-                .signal_semaphores(&signal_semaphores)
-                .command_buffers(&command_buffers);
-            device.queue_submit(
-                self.queues.compute_queue,
-                &[submit_info],
-                self.fences[self.current_frame],
-            )?;
-
-            let frame = self.current_frame;
+            self.last_finished_frame = Some(current_frame);
             self.current_frame = (self.current_frame + 1) % MAX_DEPTH;
-            (self.render_finished_semaphores[frame], frame)
-        } else {
-            let idx = (self.current_frame + MAX_DEPTH - 1) % MAX_DEPTH;
-            (vk::Semaphore::null(), idx)
-        };
+        }
 
-        Ok(TracerSlot {
-            image: self.images[idx],
-            image_view: self.image_views[idx],
-            sampler: self.image_samplers[idx],
-            semaphore: sem,
-            descriptor_set: self.descriptor_sets[idx],
-            index: idx,
-        })
+        // Return last processed frame
+        if let Some(idx) = self.last_finished_frame {
+            Ok(TracerSlot {
+                image: self.images[idx],
+                image_view: self.image_views[idx],
+                sampler: self.image_samplers[idx],
+                descriptor_set: self.descriptor_sets[idx],
+                index: idx,
+            })
+        } else {
+            unreachable!("TracerPipeline::present called before first frame was rendered")
+        }
     }
 
     pub unsafe fn resize(
@@ -585,6 +613,13 @@ impl TracerPipeline {
             self.destroyed = true;
         } else {
             warn!("TracerPipeline already destroyed");
+        }
+    }
+
+    pub fn get_profile(&self) -> TracerProfile {
+        TracerProfile {
+            fps: self.fps_result,
+            render_time: 0.0,
         }
     }
 }

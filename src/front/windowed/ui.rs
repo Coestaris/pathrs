@@ -1,9 +1,12 @@
+use crate::tracer::TracerProfile;
 use gpu_allocator::vulkan::AllocatorVisualizer;
 
 pub struct UICompositor {
     pub egui: egui_winit::State,
     pub allocator_visualizer: AllocatorVisualizer,
+
     pub fps: f32,
+    pub tracer_profile: Option<TracerProfile>,
 }
 
 impl UICompositor {
@@ -28,11 +31,16 @@ impl UICompositor {
             egui,
             allocator_visualizer: AllocatorVisualizer::new(),
             fps: 0.0,
+            tracer_profile: None,
         }
     }
 
     pub fn set_fps(&mut self, fps: f32) {
         self.fps = fps;
+    }
+
+    pub fn set_tracer_profile(&mut self, profile: TracerProfile) {
+        self.tracer_profile = Some(profile);
     }
 
     pub(crate) fn render(
@@ -43,6 +51,15 @@ impl UICompositor {
         egui::SidePanel::left("side_panel")
             .resizable(true)
             .show(ctx, |ui| {
+                ui.label(format!("FPS: {:.2}", self.fps));
+                ui.separator();
+                ui.collapsing("Profiler", |ui| {
+                    if let Some(profile) = &self.tracer_profile {
+                        ui.label(format!("Traces per sec: {:.2}", profile.fps.fps()));
+                        ui.label(format!("Render time: {:.2}", profile.render_time));
+                    }
+                });
+
                 ui.collapsing("Tracer Controls", |ui| {
                     ui.label("Tracer Controls go here");
                 });

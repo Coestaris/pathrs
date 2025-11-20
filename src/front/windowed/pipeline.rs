@@ -36,6 +36,7 @@ pub struct PresentationPipeline {
     chain_image_format: vk::Format,
     chain_extent: vk::Extent2D,
 
+    descriptor_set_layout: vk::DescriptorSetLayout,
     pipeline_layout: vk::PipelineLayout,
     render_pass: vk::RenderPass,
     pipeline: vk::Pipeline,
@@ -109,7 +110,7 @@ impl PresentationPipeline {
                 .module(frag_shader.module)
                 .name(entrypoint),
         ];
-        let (pipeline_layout, pipeline) =
+        let (descriptor_set_layout, pipeline_layout, pipeline) =
             Self::create_pipeline(device, extent, render_pass, &stages)
                 .context("Failed to create pipeline")?;
 
@@ -150,6 +151,7 @@ impl PresentationPipeline {
             chain_image_format: format,
             chain_extent: extent,
 
+            descriptor_set_layout,
             pipeline_layout,
             render_pass,
             pipeline,
@@ -246,6 +248,9 @@ impl PresentationPipeline {
             debug!("Destroying pipeline layout");
             device.destroy_pipeline_layout(self.pipeline_layout, None);
 
+            debug!("Destroying descriptor set layout");
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+
             debug!("Destroying shaders");
             self.vert_shader.destroy(device);
             self.frag_shader.destroy(device);
@@ -300,8 +305,8 @@ impl PresentationPipeline {
             let score = match *mode {
                 vk::PresentModeKHR::IMMEDIATE => 10,
                 vk::PresentModeKHR::MAILBOX => 8,
-                vk::PresentModeKHR::FIFO => 6,
-                vk::PresentModeKHR::FIFO_RELAXED => 5,
+                vk::PresentModeKHR::FIFO => 16,
+                vk::PresentModeKHR::FIFO_RELAXED => 15,
                 _ => 0,
             };
 
@@ -504,7 +509,7 @@ impl PresentationPipeline {
         extent: vk::Extent2D,
         render_pass: vk::RenderPass,
         shader_stages: &[vk::PipelineShaderStageCreateInfo],
-    ) -> anyhow::Result<(vk::PipelineLayout, vk::Pipeline)> {
+    ) -> anyhow::Result<(vk::DescriptorSetLayout, vk::PipelineLayout, vk::Pipeline)> {
         let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::default()
             .dynamic_states(&[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
         let vertex_binding_descriptors = vec![QuadVertex::get_binding_description()];
@@ -562,7 +567,7 @@ impl PresentationPipeline {
             .binding(0)
             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
+            .stage_flags(vk::ShaderStageFlags::COMPUTE | vk::ShaderStageFlags::FRAGMENT)];
         let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
         let descriptor_set_layout = device.create_descriptor_set_layout(&layout_info, None)?;
 
@@ -587,7 +592,7 @@ impl PresentationPipeline {
             .map_err(|(_, e)| e)?
             .remove(0);
 
-        Ok((pipline_layout, pipeline))
+        Ok((descriptor_set_layout, pipline_layout, pipeline))
     }
 
     unsafe fn create_framebuffers(
@@ -851,6 +856,7 @@ impl PresentationPipeline {
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_render_pass(self.render_pass, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
 
             let render_pass =
                 Self::create_render_pass(device, format).context("Failed to create render pass")?;
@@ -866,10 +872,11 @@ impl PresentationPipeline {
                     .module(self.frag_shader.module)
                     .name(entrypoint),
             ];
-            let (pipeline_layout, pipeline) =
+            let (descriptor_set_layout, pipeline_layout, pipeline) =
                 Self::create_pipeline(device, extent, render_pass, &stages)
                     .context("Failed to create pipeline")?;
 
+            self.descriptor_set_layout = descriptor_set_layout;
             self.pipeline_layout = pipeline_layout;
             self.render_pass = render_pass;
             self.pipeline = pipeline;
@@ -940,12 +947,8 @@ impl PresentationPipeline {
         device.reset_fences(&[self.in_flight_fences[self.current_frame]])?;
 
         // Submit
-        let mut wait_semaphores = vec![self.image_available_semaphores[self.current_frame]];
-        let mut wait_stages = vec![vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        if tracer_slot.semaphore != vk::Semaphore::null() {
-            wait_semaphores.push(tracer_slot.semaphore);
-            wait_stages.push(vk::PipelineStageFlags::FRAGMENT_SHADER);
-        }
+        let wait_semaphores = vec![self.image_available_semaphores[self.current_frame]];
+        let wait_stages = vec![vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
 
         let signal_semaphores = [self.render_finished_semaphores[index]];
         let command_buffers = vec![self.command_buffers[self.current_frame].as_inner()];

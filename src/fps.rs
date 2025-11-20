@@ -2,9 +2,19 @@ use std::time::Instant;
 
 const FPS_CALCULATE_INTERVAL: u128 = 500; // in milliseconds
 
+#[derive(Debug, Clone, Copy)]
 pub enum FPSResult {
     Updated(f32),
     Cached(f32),
+}
+
+impl FPSResult {
+    pub fn fps(self) -> f32 {
+        match self {
+            Self::Updated(fps) => fps,
+            Self::Cached(fps) => fps,
+        }
+    }
 }
 
 pub struct FPS {

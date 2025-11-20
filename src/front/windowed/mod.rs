@@ -146,6 +146,10 @@ impl ApplicationHandler for TracerApp {
                         context.ui.borrow_mut().set_fps(fps);
                     }
                 }
+                context
+                    .ui
+                    .borrow_mut()
+                    .set_tracer_profile(context.tracer.get_profile());
             },
             WindowEvent::CloseRequested => {
                 info!("Close requested, exiting event loop");

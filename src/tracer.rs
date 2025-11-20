@@ -3,6 +3,7 @@ use crate::back::{Back, BackQueueFamilyIndices, BackQueues};
 use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
 use crate::common::queue::QueueFamily;
 use crate::config::TracerConfig;
+use crate::fps::FPSResult;
 use crate::front::{Front, QueueFamilyIndices};
 use anyhow::Context;
 use ash::vk::{DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceFeatures};
@@ -13,6 +14,11 @@ use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use log::{debug, info, warn};
 use std::ffi::{c_char, CStr, CString};
 use std::sync::{Arc, Mutex};
+
+pub struct TracerProfile {
+    pub fps: FPSResult,
+    pub render_time: f32,
+}
 
 unsafe extern "system" fn debug_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -593,6 +599,10 @@ impl<F: Front> Tracer<F> {
             .with_context(|| format!("Failed to resize tracer front to {:?}", size))?;
 
         Ok(())
+    }
+
+    pub fn get_profile(&self) -> TracerProfile {
+        self.back.as_ref().unwrap().get_profile()
     }
 }
 
