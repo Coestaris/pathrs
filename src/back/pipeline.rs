@@ -25,13 +25,15 @@ pub(crate) struct TracerPipeline {
     fps: FPS,
     profile: TracerProfile,
 
+    // Output images
     descriptor_set_layout_0: vk::DescriptorSetLayout,
     descriptor_pool_0: vk::DescriptorPool,
     descriptor_sets_0: Vec<vk::DescriptorSet>, // Size = MAX_DEPTH
 
+    // Parameters SSBO
     descriptor_set_layout_1: vk::DescriptorSetLayout,
     descriptor_pool_1: vk::DescriptorPool,
-    descriptor_set_1: vk::DescriptorSet, // Size = MAX_DEPTH
+    descriptor_set_1: vk::DescriptorSet,
 
     query_pool: vk::QueryPool,
     timestamp_period: f32,
