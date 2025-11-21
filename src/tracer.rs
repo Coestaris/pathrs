@@ -162,9 +162,7 @@ pub struct Tracer<F: Front> {
     viewport: UVec2,
 
     pub front: Option<F>,
-    pub back: Option<TracerPipeline>,
-
-    pub config: TracerConfig,
+    pub back: Option<Back>,
 
     pub entry: Entry,
     pub instance: Instance,
@@ -520,7 +518,7 @@ impl<F: Front> Tracer<F> {
             Tracer::<D>::new_device(&entry, &instance, &mut front)?;
 
         info!("Initializing back-end");
-        let back = TracerPipeline::new(
+        let back = Back::new(
             allocator.clone(),
             asset_manager.clone(),
             viewport,
@@ -528,6 +526,7 @@ impl<F: Front> Tracer<F> {
             physical_device,
             &logical_device,
             back_queues,
+            config,
         )
         .context("Failed to create tracer pipeline")?;
 
@@ -545,7 +544,6 @@ impl<F: Front> Tracer<F> {
             viewport,
             front: Some(front),
             back: Some(back),
-            config,
             entry,
             instance,
             debug_messenger,

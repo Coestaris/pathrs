@@ -1,5 +1,6 @@
 use crate::assets::AssetManager;
-use crate::back::BackQueues;
+use crate::back::push_constants::PushConstants;
+use crate::back::{BackQueues, TracerSlot};
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
 use crate::fps::FPS;
@@ -16,16 +17,7 @@ use std::sync::{Arc, Mutex};
 const COMPUTE_ASSET: &str = "shaders/shader.comp.spv";
 const MAX_DEPTH: usize = 2;
 
-#[allow(dead_code)]
-pub struct TracerSlot {
-    pub image: vk::Image,
-    pub image_view: vk::ImageView,
-    pub sampler: vk::Sampler,
-    pub descriptor_set: vk::DescriptorSet,
-    pub index: usize,
-}
-
-pub struct TracerPipeline {
+pub(crate) struct TracerPipeline {
     queues: BackQueues,
     allocator: Arc<Mutex<Allocator>>,
     destroyed: bool,
@@ -316,8 +308,10 @@ impl TracerPipeline {
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::COMPUTE | vk::ShaderStageFlags::FRAGMENT)];
 
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
-        let descriptor_set_layout = device.create_descriptor_set_layout(&layout_info, None)?;
+        let descriptor_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        let descriptor_set_layout =
+            device.create_descriptor_set_layout(&descriptor_layout_info, None)?;
 
         let descriptor_pool_sizes = [vk::DescriptorPoolSize::default()
             .ty(vk::DescriptorType::STORAGE_IMAGE)
@@ -353,8 +347,10 @@ impl TracerPipeline {
         descriptor_set_layout: &vk::DescriptorSetLayout,
         shader_stage: &vk::PipelineShaderStageCreateInfo,
     ) -> anyhow::Result<(vk::PipelineLayout, vk::Pipeline)> {
+        let ranges = [PushConstants::get_range()];
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
-            .set_layouts(std::slice::from_ref(descriptor_set_layout));
+            .set_layouts(std::slice::from_ref(descriptor_set_layout))
+            .push_constant_ranges(&ranges);
         let pipline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
         let pipeline_info = vk::ComputePipelineCreateInfo::default()
@@ -375,6 +371,7 @@ impl TracerPipeline {
         image: vk::Image,
         need_timestamp: bool,
         extent: Extent2D,
+        mut get_push_constants: impl FnMut() -> PushConstants,
     ) -> anyhow::Result<()> {
         command_buffer.reset(device)?;
         command_buffer.begin(device)?;
@@ -397,6 +394,17 @@ impl TracerPipeline {
             0,
             &[descriptor_set],
             &[],
+        );
+        let push_constants = get_push_constants();
+        device.cmd_push_constants(
+            command_buffer.as_inner(),
+            self.pipeline_layout,
+            vk::ShaderStageFlags::COMPUTE,
+            0,
+            std::slice::from_raw_parts(
+                (&push_constants as *const PushConstants) as *const u8,
+                std::mem::size_of::<PushConstants>(),
+            ),
         );
         command_buffer.dispatch(
             device,
@@ -451,6 +459,7 @@ impl TracerPipeline {
         device: &Device,
         need_timestamp: bool,
         index: usize,
+        get_push_constants: impl FnMut() -> PushConstants,
     ) -> anyhow::Result<()> {
         device.reset_fences(&[self.fences[index]])?;
 
@@ -465,6 +474,7 @@ impl TracerPipeline {
                 width: self.viewport.x,
                 height: self.viewport.y,
             },
+            get_push_constants,
         )?;
 
         // Submit
@@ -499,7 +509,11 @@ impl TracerPipeline {
         }
     }
 
-    pub unsafe fn present(&mut self, device: &Device) -> anyhow::Result<TracerSlot> {
+    pub unsafe fn present(
+        &mut self,
+        device: &Device,
+        get_push_constants: impl FnMut() -> PushConstants,
+    ) -> anyhow::Result<TracerSlot> {
         let current_frame = self.current_frame;
         let status = device.get_fence_status(self.fences[current_frame])?;
         if status {
@@ -509,7 +523,7 @@ impl TracerPipeline {
                 need_timestamp = true;
             }
 
-            self.enqueue_new_frame(device, need_timestamp, current_frame)?;
+            self.enqueue_new_frame(device, need_timestamp, current_frame, get_push_constants)?;
 
             // If it's the first frame, we need to wait for the first frame
             // to finish rendering before we can present it.

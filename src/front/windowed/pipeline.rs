@@ -1,5 +1,4 @@
 use crate::assets::AssetManager;
-use crate::back::pipeline::TracerSlot;
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
 use crate::front::windowed::front::WindowedQueues;
@@ -18,6 +17,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::vec;
 use winit::window::Window;
+use crate::back::TracerSlot;
 
 const FRAGMENT_ASSET: &str = "shaders/triangle.frag.spv";
 const VERTEX_ASSET: &str = "shaders/triangle.vert.spv";

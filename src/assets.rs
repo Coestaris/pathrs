@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+#[allow(dead_code)]
 pub struct AssetMeta {
     pub id: String,
     pub path: PathBuf,

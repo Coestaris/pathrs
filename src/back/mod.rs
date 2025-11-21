@@ -1,10 +1,30 @@
+mod config;
 pub mod pipeline;
+mod push_constants;
+mod ssbo;
 
+use crate::assets::AssetManager;
+use crate::back::pipeline::TracerPipeline;
+use crate::back::push_constants::PushConstants;
 use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
 use crate::common::queue::QueueFamily;
+use crate::config::TracerConfig;
 use crate::front::QueueFamilyIndices;
+use crate::tracer::TracerProfile;
+use ash::vk::PhysicalDevice;
 use ash::{vk, Device};
+use gpu_allocator::vulkan::Allocator;
 use std::ffi::c_char;
+use std::sync::{Arc, Mutex};
+
+#[allow(dead_code)]
+pub struct TracerSlot {
+    pub image: vk::Image,
+    pub image_view: vk::ImageView,
+    pub sampler: vk::Sampler,
+    pub descriptor_set: vk::DescriptorSet,
+    pub index: usize,
+}
 
 impl QueueFamilyIndices for BackQueueFamilyIndices {
     type Queues = BackQueues;
@@ -49,7 +69,12 @@ pub struct BackQueues {
     pub compute_queue: vk::Queue,
 }
 
-pub struct Back {}
+pub struct Back {
+    pipeline: TracerPipeline,
+
+    config: TracerConfig,
+    time: f32,
+}
 
 impl Back {
     pub unsafe fn get_required_instance_extensions(
@@ -127,5 +152,51 @@ impl Back {
             compute_family: compute_queue_index
                 .ok_or_else(|| anyhow::anyhow!("No compute queue family found"))?,
         })
+    }
+
+    pub unsafe fn new(
+        allocator: Arc<Mutex<Allocator>>,
+        asset_manager: AssetManager,
+        viewport: glam::UVec2,
+        instance: &ash::Instance,
+        physical_device: PhysicalDevice,
+        device: &Device,
+        queues: BackQueues,
+        config: TracerConfig,
+    ) -> anyhow::Result<Self> {
+        let pipeline = TracerPipeline::new(
+            allocator,
+            asset_manager,
+            viewport,
+            instance,
+            physical_device,
+            device,
+            queues,
+        )?;
+
+        Ok(Self {
+            pipeline,
+            config,
+            time: 0.0,
+        })
+    }
+
+    pub unsafe fn present(&mut self, device: &Device) -> anyhow::Result<TracerSlot> {
+        self.time += 1.0 / 60.0; // For debugging purposes, assume its always 60 fps
+
+        self.pipeline
+            .present(device, || PushConstants::new(self.time))
+    }
+
+    pub unsafe fn destroy(&mut self, device: &Device) {
+        self.pipeline.destroy(device);
+    }
+
+    pub unsafe fn resize(&mut self, device: &Device, size: glam::UVec2) -> anyhow::Result<()> {
+        self.pipeline.resize(device, size)
+    }
+
+    pub fn get_profile(&self) -> TracerProfile {
+        self.pipeline.get_profile()
     }
 }

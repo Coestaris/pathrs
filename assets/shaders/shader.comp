@@ -1,20 +1,29 @@
 #version 450
 
-layout(local_size_x = 16, local_size_y = 16) in;
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (set = 0, binding = 0, rgba8) uniform writeonly image2D output_image;
 
-layout (set=0, binding = 0, rgba8) uniform writeonly image2D output_image;
+layout (push_constant) uniform constants {
+    float time;
+} in_runtime;
+
+vec4 ray_trace(ivec2 pixel_coords) {
+    // Placeholder for ray tracing logic
+    float normalized_x = float(pixel_coords.x) / float(imageSize(output_image).x);
+    float normalized_y = float(pixel_coords.y) / float(imageSize(output_image).y);
+    vec3 color = vec3(normalized_x * sin(2), normalized_y * cos(2), 0.5 + 0.5 * sin(in_runtime.time));
+    return vec4(color, 1.0);
+}
 
 void main() {
     ivec2 imgSize = imageSize(output_image);
     ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
 
     if (coords.x >= imgSize.x || coords.y >= imgSize.y)
-    return;
+    {
+        return;
+    }
 
-    float r = (int(coords.x / 10) % 2) == 0 ? 0.0 : 1.0;
-    float g = (int(coords.y / 10) % 2) == 0 ? 0.0 : 1.0;
-    float b = 0;
-
-    vec4 new_pixel = vec4(r, g, b, 1.0);
+    vec4 new_pixel = ray_trace(coords);
     imageStore(output_image, coords, new_pixel);
 }
