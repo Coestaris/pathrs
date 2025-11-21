@@ -1,10 +1,11 @@
+use crate::config::TracerConfig;
 use crate::tracer::TracerProfile;
 use gpu_allocator::vulkan::AllocatorVisualizer;
 
 pub struct UICompositor {
     pub egui: egui_winit::State,
     pub allocator_visualizer: AllocatorVisualizer,
-
+    config: TracerConfig,
     pub fps: f32,
     pub tracer_profile: Option<TracerProfile>,
 }
@@ -26,10 +27,11 @@ impl UICompositor {
         egui
     }
 
-    pub(crate) fn new(egui: egui_winit::State) -> Self {
+    pub(crate) fn new(egui: egui_winit::State, config: TracerConfig) -> Self {
         Self {
             egui,
             allocator_visualizer: AllocatorVisualizer::new(),
+            config,
             fps: 0.0,
             tracer_profile: None,
         }
@@ -58,7 +60,10 @@ impl UICompositor {
                 }
 
                 ui.collapsing("Tracer Controls", |ui| {
-                    ui.label("Tracer Controls go here");
+                    ui.add(
+                        egui::Slider::new(&mut self.config.0.borrow_mut().slider, 0.0..=3.14)
+                            .text("Slider"),
+                    );
                 });
 
                 ui.collapsing("Allocator Breakdown", |ui| {

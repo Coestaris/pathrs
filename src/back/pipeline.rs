@@ -1,5 +1,6 @@
 use crate::assets::AssetManager;
-use crate::back::push_constants::PushConstants;
+use crate::back::push_constants::PushConstantsData;
+use crate::back::ssbo::{ParametersSSBO, ParametersSSBOData};
 use crate::back::{BackQueues, TracerSlot};
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
@@ -24,12 +25,17 @@ pub(crate) struct TracerPipeline {
     fps: FPS,
     profile: TracerProfile,
 
-    descriptor_set_layout: vk::DescriptorSetLayout,
-    descriptor_pool: vk::DescriptorPool,
-    descriptor_sets: Vec<vk::DescriptorSet>, // Size = MAX_DEPTH
+    descriptor_set_layout_0: vk::DescriptorSetLayout,
+    descriptor_pool_0: vk::DescriptorPool,
+    descriptor_sets_0: Vec<vk::DescriptorSet>, // Size = MAX_DEPTH
+
+    descriptor_set_layout_1: vk::DescriptorSetLayout,
+    descriptor_pool_1: vk::DescriptorPool,
+    descriptor_set_1: vk::DescriptorSet, // Size = MAX_DEPTH
 
     query_pool: vk::QueryPool,
     timestamp_period: f32,
+    parameters_ssbo: ParametersSSBO,
 
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -73,9 +79,16 @@ impl TracerPipeline {
         )
         .context("Failed to create images")?;
 
-        let (descriptor_set_layout, descriptor_pool, descriptor_sets) =
-            Self::create_descriptor_sets(device, &image_views)
-                .context("Failed to create descriptor set layout")?;
+        debug!("Creating parameters SSBO");
+        let parameters_ssbo = ParametersSSBO::new(device, &mut allocator.lock().unwrap())
+            .context("Failed to create parameters SSBO")?;
+
+        let (descriptor_set_layout_0, descriptor_pool_0, descriptor_sets_0) =
+            Self::create_descriptor_set_0(device, &image_views)
+                .context("Failed to create descriptor set 0 layout")?;
+        let (descriptor_set_layout_1, descriptor_pool_1, descriptor_set_1) =
+            Self::create_descriptor_set_1(device, &parameters_ssbo)
+                .context("Failed to create descriptor set 1 layout")?;
 
         debug!("Creating compute shader");
         let compute_shader = asset_manager
@@ -91,9 +104,13 @@ impl TracerPipeline {
             .name(entrypoint);
 
         debug!("Creating pipeline");
-        let (pipeline_layout, pipeline) =
-            Self::create_pipeline(device, &descriptor_set_layout, &stage)
-                .context("Failed to create pipeline")?;
+        let (pipeline_layout, pipeline) = Self::create_pipeline(
+            device,
+            descriptor_set_layout_0,
+            descriptor_set_layout_1,
+            &stage,
+        )
+        .context("Failed to create pipeline")?;
 
         debug!("Creating sync objects");
         let fences = Self::create_sync_objects(device).context("Failed to create fences")?;
@@ -109,11 +126,18 @@ impl TracerPipeline {
             fps: FPS::new(),
 
             profile: TracerProfile::default(),
-            descriptor_set_layout,
-            descriptor_pool,
-            descriptor_sets,
+
+            descriptor_set_layout_0,
+            descriptor_pool_0,
+            descriptor_sets_0,
+
+            descriptor_set_layout_1,
+            descriptor_pool_1,
+            descriptor_set_1,
+
             query_pool,
             timestamp_period,
+            parameters_ssbo,
             pipeline_layout,
             pipeline,
             command_pool,
@@ -294,7 +318,7 @@ impl TracerPipeline {
         Ok((command_pool, command_buffer))
     }
 
-    unsafe fn create_descriptor_sets(
+    unsafe fn create_descriptor_set_0(
         device: &Device,
         image_views: &[vk::ImageView],
     ) -> anyhow::Result<(
@@ -302,11 +326,14 @@ impl TracerPipeline {
         vk::DescriptorPool,
         Vec<vk::DescriptorSet>,
     )> {
-        let bindings = [vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::COMPUTE | vk::ShaderStageFlags::FRAGMENT)];
+        let bindings = [
+            // (set = 0, binding = 0, rgba8) uniform writeonly image2D output_image;
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::COMPUTE | vk::ShaderStageFlags::FRAGMENT),
+        ];
 
         let descriptor_layout_info =
             vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
@@ -331,6 +358,7 @@ impl TracerPipeline {
             let out_image_info = vk::DescriptorImageInfo::default()
                 .image_view(image_views[i])
                 .image_layout(vk::ImageLayout::GENERAL);
+
             let writes = [vk::WriteDescriptorSet::default()
                 .dst_set(*descriptor_set)
                 .dst_binding(0)
@@ -342,14 +370,67 @@ impl TracerPipeline {
         Ok((descriptor_set_layout, descriptor_pool, descriptor_sets))
     }
 
+    unsafe fn create_descriptor_set_1(
+        device: &Device,
+        parameters_ssbo: &ParametersSSBO,
+    ) -> anyhow::Result<(
+        vk::DescriptorSetLayout,
+        vk::DescriptorPool,
+        vk::DescriptorSet,
+    )> {
+        let bindings = [
+            // (set = 1, binding = 0) buffer parameters
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::COMPUTE),
+        ];
+
+        let descriptor_layout_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        let descriptor_set_layout =
+            device.create_descriptor_set_layout(&descriptor_layout_info, None)?;
+
+        let descriptor_pool_sizes = [vk::DescriptorPoolSize::default()
+            .ty(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)];
+        let descriptor_pool_info = vk::DescriptorPoolCreateInfo::default()
+            .pool_sizes(&descriptor_pool_sizes)
+            .max_sets(1);
+        let descriptor_pool = device.create_descriptor_pool(&descriptor_pool_info, None)?;
+
+        let layout_handles = vec![descriptor_set_layout; 1];
+        let alloc_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&layout_handles);
+        let descriptor_sets = device.allocate_descriptor_sets(&alloc_info)?;
+        let descriptor_set = descriptor_sets[0];
+
+        let parameters_buffer_info = vk::DescriptorBufferInfo::default()
+            .buffer(parameters_ssbo.buffer)
+            .offset(0)
+            .range(vk::WHOLE_SIZE);
+        let writes = [vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .buffer_info(std::slice::from_ref(&parameters_buffer_info))];
+        device.update_descriptor_sets(&writes, &[]);
+
+        Ok((descriptor_set_layout, descriptor_pool, descriptor_set))
+    }
+
     unsafe fn create_pipeline(
         device: &Device,
-        descriptor_set_layout: &vk::DescriptorSetLayout,
+        descriptor_set_layout_0: vk::DescriptorSetLayout,
+        descriptor_set_layout_1: vk::DescriptorSetLayout,
         shader_stage: &vk::PipelineShaderStageCreateInfo,
     ) -> anyhow::Result<(vk::PipelineLayout, vk::Pipeline)> {
-        let ranges = [PushConstants::get_range()];
+        let ranges = [PushConstantsData::get_range()];
+        let layouts = [descriptor_set_layout_0, descriptor_set_layout_1];
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
-            .set_layouts(std::slice::from_ref(descriptor_set_layout))
+            .set_layouts(&layouts)
             .push_constant_ranges(&ranges);
         let pipline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
@@ -367,11 +448,12 @@ impl TracerPipeline {
         &self,
         device: &Device,
         command_buffer: &CommandBuffer,
-        descriptor_set: vk::DescriptorSet,
+        descriptor_set_0: vk::DescriptorSet,
+        descriptor_set_1: vk::DescriptorSet,
         image: vk::Image,
         need_timestamp: bool,
         extent: Extent2D,
-        mut get_push_constants: impl FnMut() -> PushConstants,
+        push_constants_data: PushConstantsData,
     ) -> anyhow::Result<()> {
         command_buffer.reset(device)?;
         command_buffer.begin(device)?;
@@ -392,18 +474,17 @@ impl TracerPipeline {
             vk::PipelineBindPoint::COMPUTE,
             self.pipeline_layout,
             0,
-            &[descriptor_set],
+            &[descriptor_set_0, descriptor_set_1],
             &[],
         );
-        let push_constants = get_push_constants();
         device.cmd_push_constants(
             command_buffer.as_inner(),
             self.pipeline_layout,
             vk::ShaderStageFlags::COMPUTE,
             0,
             std::slice::from_raw_parts(
-                (&push_constants as *const PushConstants) as *const u8,
-                std::mem::size_of::<PushConstants>(),
+                (&push_constants_data as *const PushConstantsData) as *const u8,
+                std::mem::size_of::<PushConstantsData>(),
             ),
         );
         command_buffer.dispatch(
@@ -459,7 +540,7 @@ impl TracerPipeline {
         device: &Device,
         need_timestamp: bool,
         index: usize,
-        get_push_constants: impl FnMut() -> PushConstants,
+        push_constants_data: PushConstantsData,
     ) -> anyhow::Result<()> {
         device.reset_fences(&[self.fences[index]])?;
 
@@ -467,14 +548,15 @@ impl TracerPipeline {
         self.record_command_buffer(
             device,
             &*buffer_ptr,
-            self.descriptor_sets[index],
+            self.descriptor_sets_0[index],
+            self.descriptor_set_1,
             self.images[index],
             need_timestamp,
             vk::Extent2D {
                 width: self.viewport.x,
                 height: self.viewport.y,
             },
-            get_push_constants,
+            push_constants_data,
         )?;
 
         // Submit
@@ -512,7 +594,8 @@ impl TracerPipeline {
     pub unsafe fn present(
         &mut self,
         device: &Device,
-        get_push_constants: impl FnMut() -> PushConstants,
+        parameters_data: ParametersSSBOData,
+        push_constants_data: PushConstantsData,
     ) -> anyhow::Result<TracerSlot> {
         let current_frame = self.current_frame;
         let status = device.get_fence_status(self.fences[current_frame])?;
@@ -523,7 +606,9 @@ impl TracerPipeline {
                 need_timestamp = true;
             }
 
-            self.enqueue_new_frame(device, need_timestamp, current_frame, get_push_constants)?;
+            self.parameters_ssbo.update(parameters_data);
+
+            self.enqueue_new_frame(device, need_timestamp, current_frame, push_constants_data)?;
 
             // If it's the first frame, we need to wait for the first frame
             // to finish rendering before we can present it.
@@ -544,7 +629,7 @@ impl TracerPipeline {
                 image: self.images[idx],
                 image_view: self.image_views[idx],
                 sampler: self.image_samplers[idx],
-                descriptor_set: self.descriptor_sets[idx],
+                descriptor_set: self.descriptor_sets_0[idx],
                 index: idx,
             })
         } else {
@@ -577,8 +662,8 @@ impl TracerPipeline {
             }
 
             // Destroy descriptor sets
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-            device.destroy_descriptor_pool(self.descriptor_pool, None);
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout_0, None);
+            device.destroy_descriptor_pool(self.descriptor_pool_0, None);
 
             // Create new images
             let (images, image_views, image_samplers, image_allocations) = Self::create_images(
@@ -596,12 +681,12 @@ impl TracerPipeline {
             self.image_allocations = image_allocations.into_iter().map(Some).collect();
 
             // Create new descriptor sets
-            let (descriptor_set_layout, descriptor_pool, descriptor_sets) =
-                Self::create_descriptor_sets(device, &self.image_views)
+            let (descriptor_set_layout_0, descriptor_pool_0, descriptor_sets_0) =
+                Self::create_descriptor_set_0(device, &self.image_views)
                     .context("Failed to create descriptor set layout")?;
-            self.descriptor_set_layout = descriptor_set_layout;
-            self.descriptor_pool = descriptor_pool;
-            self.descriptor_sets = descriptor_sets;
+            self.descriptor_set_layout_0 = descriptor_set_layout_0;
+            self.descriptor_pool_0 = descriptor_pool_0;
+            self.descriptor_sets_0 = descriptor_sets_0;
         }
 
         Ok(())
@@ -646,11 +731,15 @@ impl TracerPipeline {
                 device.destroy_image(*image, None);
             }
 
-            debug!("Destroying descriptor set layout");
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            debug!("Destroying SSBO");
+            self.parameters_ssbo
+                .destroy(device, &mut self.allocator.lock().unwrap());
 
-            debug!("Destroying descriptor pool");
-            device.destroy_descriptor_pool(self.descriptor_pool, None);
+            debug!("Destroying descriptor set layout");
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout_0, None);
+            device.destroy_descriptor_pool(self.descriptor_pool_0, None);
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout_1, None);
+            device.destroy_descriptor_pool(self.descriptor_pool_1, None);
 
             debug!("Destroying query pool");
             device.destroy_query_pool(self.query_pool, None);

@@ -95,7 +95,7 @@ impl ApplicationHandler for TracerApp {
         let context = UICompositor::new_context();
         let id = context.viewport_id();
         let state = egui_winit::State::new(context, id, &window, None, None, None);
-        let ui = Rc::new(RefCell::new(UICompositor::new(state)));
+        let ui = Rc::new(RefCell::new(UICompositor::new(state, self.config.clone())));
 
         let tracer = unsafe {
             Tracer::<TracerWindowedFront>::new(

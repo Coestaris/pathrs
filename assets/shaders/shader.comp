@@ -3,15 +3,21 @@
 layout (local_size_x = 16, local_size_y = 16) in;
 layout (set = 0, binding = 0, rgba8) uniform writeonly image2D output_image;
 
+layout (set = 1, binding = 0, std140) readonly buffer parameters {
+    float slider;
+
+} in_parameters;
+
 layout (push_constant) uniform constants {
     float time;
 } in_runtime;
 
 vec4 ray_trace(ivec2 pixel_coords) {
     // Placeholder for ray tracing logic
+    float slider = in_parameters.slider;
     float normalized_x = float(pixel_coords.x) / float(imageSize(output_image).x);
     float normalized_y = float(pixel_coords.y) / float(imageSize(output_image).y);
-    vec3 color = vec3(normalized_x * sin(2), normalized_y * cos(2), 0.5 + 0.5 * sin(in_runtime.time));
+    vec3 color = vec3(normalized_x * sin(slider), normalized_y * cos(slider), 0.5 + 0.5 * sin(in_runtime.time));
     return vec4(color, 1.0);
 }
 

@@ -5,22 +5,16 @@ use std::rc::Rc;
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct TracerConfigInner {
-    test_param_1: f32,
-    test_param_2: f32,
-    test_param_3: u32,
+    pub slider: f32,
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub struct TracerConfig(Rc<RefCell<TracerConfigInner>>);
+pub struct TracerConfig(pub Rc<RefCell<TracerConfigInner>>);
 
 impl Default for TracerConfig {
     fn default() -> Self {
-        Self(Rc::new(RefCell::new(TracerConfigInner {
-            test_param_1: 10.0,
-            test_param_2: 10.0,
-            test_param_3: 256,
-        })))
+        Self(Rc::new(RefCell::new(TracerConfigInner { slider: 0.0 })))
     }
 }
 

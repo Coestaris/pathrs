@@ -1,11 +1,11 @@
-mod config;
 pub mod pipeline;
 mod push_constants;
 mod ssbo;
 
 use crate::assets::AssetManager;
 use crate::back::pipeline::TracerPipeline;
-use crate::back::push_constants::PushConstants;
+use crate::back::push_constants::PushConstantsData;
+use crate::back::ssbo::ParametersSSBOData;
 use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
 use crate::common::queue::QueueFamily;
 use crate::config::TracerConfig;
@@ -184,8 +184,11 @@ impl Back {
     pub unsafe fn present(&mut self, device: &Device) -> anyhow::Result<TracerSlot> {
         self.time += 1.0 / 60.0; // For debugging purposes, assume its always 60 fps
 
-        self.pipeline
-            .present(device, || PushConstants::new(self.time))
+        let push_constants = PushConstantsData::new(self.time);
+        let config = self.config.0.borrow();
+        let parameters = ParametersSSBOData::new(config.slider);
+
+        self.pipeline.present(device, parameters, push_constants)
     }
 
     pub unsafe fn destroy(&mut self, device: &Device) {
