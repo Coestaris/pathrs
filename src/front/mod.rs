@@ -1,3 +1,4 @@
+use crate::back::TracerSlot;
 use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
 use ash::{vk, Device};
@@ -5,7 +6,6 @@ use gpu_allocator::vulkan::Allocator;
 use std::ffi::c_char;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
-use crate::back::TracerSlot;
 
 pub mod headless;
 pub mod windowed;

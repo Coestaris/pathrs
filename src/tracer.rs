@@ -271,10 +271,7 @@ impl<F: Front> Tracer<F> {
             capabilities,
         )?);
         required.extend(F::get_required_instance_layers(&layers, capabilities)?);
-        required.extend(Back::get_required_instance_layers(
-            &layers,
-            capabilities,
-        )?);
+        required.extend(Back::get_required_instance_layers(&layers, capabilities)?);
         Ok(required)
     }
 
@@ -306,8 +303,7 @@ impl<F: Front> Tracer<F> {
             .api_version(api_version);
 
         let mut capabilities = InstanceCapabilities::default();
-        let instance_extensions =
-            Self::get_required_instance_extensions(entry, &mut capabilities)?;
+        let instance_extensions = Self::get_required_instance_extensions(entry, &mut capabilities)?;
         let instance_layers = Self::get_required_instance_layers(entry, &mut capabilities)?;
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
@@ -330,14 +326,9 @@ impl<F: Front> Tracer<F> {
         device: vk::PhysicalDevice,
     ) -> bool {
         let extensions = Self::get_device_extensions(instance, device).unwrap_or(vec![]);
-        let required_extensions = Self::get_required_device_extensions(
-            entry,
-            instance,
-            &extensions,
-            front,
-            capabilities,
-        )
-        .unwrap_or(vec![]);
+        let required_extensions =
+            Self::get_required_device_extensions(entry, instance, &extensions, front, capabilities)
+                .unwrap_or(vec![]);
         let extensions_ok = is_subset(&extensions, &required_extensions).unwrap_or(false);
 
         let front_ok = front

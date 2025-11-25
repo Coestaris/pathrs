@@ -1,10 +1,10 @@
+use crate::back::TracerSlot;
 use crate::common::queue::QueueFamily;
 use crate::front::headless::TracerHeadlessOutput;
 use crate::front::{Front, QueueFamilyIndices};
 use ash::vk::PhysicalDevice;
 use ash::{Device, Entry, Instance};
 use log::info;
-use crate::back::TracerSlot;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]

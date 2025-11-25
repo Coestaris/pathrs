@@ -1,9 +1,9 @@
+use crate::assets::AssetManager;
 use crate::config::TracerConfig;
 use crate::front::headless::front::TracerHeadlessFront;
 use crate::tracer::Tracer;
 use build_info::BuildInfo;
 use glam::UVec2;
-use crate::assets::AssetManager;
 
 mod front;
 
@@ -15,7 +15,7 @@ pub struct TracerHeadlessOutput {
 
 pub unsafe fn headless_tracer<C>(
     config: TracerConfig,
-    asset_manager: AssetManager, 
+    asset_manager: AssetManager,
     viewport: UVec2,
     bi: BuildInfo,
     callback: C,

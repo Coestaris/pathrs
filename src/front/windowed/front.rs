@@ -1,4 +1,5 @@
 use crate::assets::AssetManager;
+use crate::back::TracerSlot;
 use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
 use crate::front::windowed::pipeline::PresentationPipeline;
@@ -16,7 +17,6 @@ use winit::raw_window_handle::{
     DisplayHandle, RawDisplayHandle, RawWindowHandle, WindowHandle, XlibDisplayHandle,
     XlibWindowHandle,
 };
-use crate::back::TracerSlot;
 
 #[derive(Debug, Clone)]
 pub struct WindowedQueueFamilyIndices {
