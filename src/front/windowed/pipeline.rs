@@ -12,7 +12,6 @@ use glam::UVec2;
 use gpu_allocator::vulkan::Allocator;
 use log::{debug, warn};
 use std::cell::RefCell;
-use std::ffi::CStr;
 use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -105,16 +104,15 @@ impl PresentationPipeline {
         let render_pass =
             Self::create_render_pass(device, format).context("Failed to create render pass")?;
 
-        let entrypoint = CStr::from_bytes_with_nul(b"main\0")?;
         let stages = vec![
             vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::VERTEX)
                 .module(vert_shader.module)
-                .name(entrypoint),
+                .name(c"main"),
             vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::FRAGMENT)
                 .module(frag_shader.module)
-                .name(entrypoint),
+                .name(c"main"),
         ];
         let (descriptor_set_layout, pipeline_layout, pipeline) =
             Self::create_pipeline(device, extent, render_pass, &stages)
@@ -593,7 +591,7 @@ impl PresentationPipeline {
         let pipline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
 
         let pipeline_info = vk::GraphicsPipelineCreateInfo::default()
-            .stages(&shader_stages)
+            .stages(shader_stages)
             .vertex_input_state(&vertex_input_info)
             .input_assembly_state(&input_assembly_info)
             .viewport_state(&viewport_info)
@@ -699,7 +697,7 @@ impl PresentationPipeline {
 
         let ui = self.ui.as_ptr();
 
-        let raw_input = (*ui).egui.take_egui_input(&w);
+        let raw_input = (*ui).egui.take_egui_input(w);
         let FullOutput {
             platform_output,
             textures_delta,
@@ -724,7 +722,7 @@ impl PresentationPipeline {
                 .expect("Failed to update texture");
         }
 
-        (*ui).egui.handle_platform_output(&w, platform_output);
+        (*ui).egui.handle_platform_output(w, platform_output);
         let clipped_meshes = (*ui).egui.egui_ctx().tessellate(shapes, pixels_per_point);
 
         let extent = vk::Extent2D {
@@ -820,7 +818,7 @@ impl PresentationPipeline {
         command_buffer.set_scissor(device, scissor);
 
         self.record_command_buffer(command_buffer, tracer_slot, device)?;
-        self.record_egui_buffer(&w, command_buffer)?;
+        self.record_egui_buffer(w, command_buffer)?;
 
         command_buffer.end_renderpass(device);
         command_buffer.end(device)?;
@@ -878,16 +876,15 @@ impl PresentationPipeline {
             let render_pass =
                 Self::create_render_pass(device, format).context("Failed to create render pass")?;
 
-            let entrypoint = CStr::from_bytes_with_nul(b"main\0")?;
             let stages = vec![
                 vk::PipelineShaderStageCreateInfo::default()
                     .stage(vk::ShaderStageFlags::VERTEX)
                     .module(self.vert_shader.module)
-                    .name(entrypoint),
+                    .name(c"main"),
                 vk::PipelineShaderStageCreateInfo::default()
                     .stage(vk::ShaderStageFlags::FRAGMENT)
                     .module(self.frag_shader.module)
-                    .name(entrypoint),
+                    .name(c"main"),
             ];
             let (descriptor_set_layout, pipeline_layout, pipeline) =
                 Self::create_pipeline(device, extent, render_pass, &stages)
@@ -958,10 +955,10 @@ impl PresentationPipeline {
         };
 
         // Wait for the image to be available
-        if self.images_in_flight[index] != vk::Fence::null() {
-            if self.images_in_flight[index] != self.in_flight_fences[self.current_frame] {
-                device.wait_for_fences(&[self.images_in_flight[index]], true, u64::MAX)?;
-            }
+        if self.images_in_flight[index] != vk::Fence::null()
+            && self.images_in_flight[index] != self.in_flight_fences[self.current_frame]
+        {
+            device.wait_for_fences(&[self.images_in_flight[index]], true, u64::MAX)?;
         }
         self.images_in_flight[index] = self.in_flight_fences[self.current_frame];
 

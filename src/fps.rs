@@ -23,13 +23,13 @@ impl FPSResult {
     }
 }
 
-pub struct FPS {
+pub struct Fps {
     prev_calculate: Instant,
     accumulated: u32,
     fps: f32,
 }
 
-impl FPS {
+impl Fps {
     pub(crate) fn new() -> Self {
         Self {
             prev_calculate: Instant::now(),

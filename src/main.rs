@@ -1,3 +1,8 @@
+// Vulkan makes heavy use of complex types and many function arguments,
+// so we disable some clippy warnings globally for this project.
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+
 use crate::assets::AssetManager;
 use crate::config::TracerConfig;
 use crate::front::headless::headless_tracer;

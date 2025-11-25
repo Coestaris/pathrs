@@ -4,7 +4,7 @@ use crate::back::ssbo::{ParametersSSBO, ParametersSSBOData};
 use crate::back::{BackQueues, TracerSlot};
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
-use crate::fps::FPS;
+use crate::fps::Fps;
 use crate::tracer::TracerProfile;
 use anyhow::Context;
 use ash::vk::{Extent2D, PhysicalDevice};
@@ -12,7 +12,6 @@ use ash::{vk, Device, Instance};
 use glam::FloatExt;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use log::{debug, warn};
-use std::ffi::CStr;
 use std::sync::{Arc, Mutex};
 
 const COMPUTE_ASSET: &str = "shaders/shader.comp.spv";
@@ -22,7 +21,7 @@ pub(crate) struct TracerPipeline {
     queues: BackQueues,
     allocator: Arc<Mutex<Allocator>>,
     destroyed: bool,
-    fps: FPS,
+    fps: Fps,
     profile: TracerProfile,
 
     // Output images
@@ -99,11 +98,10 @@ impl TracerPipeline {
         let compute_shader = Shader::new_from_spirv(device, compute_shader.get_spirv()?)
             .context("Failed to create compute shader")?;
 
-        let entrypoint = CStr::from_bytes_with_nul(b"main\0")?;
         let stage = vk::PipelineShaderStageCreateInfo::default()
             .stage(vk::ShaderStageFlags::COMPUTE)
             .module(compute_shader.module)
-            .name(entrypoint);
+            .name(c"main");
 
         debug!("Creating pipeline");
         let (pipeline_layout, pipeline) = Self::create_pipeline(
@@ -125,7 +123,7 @@ impl TracerPipeline {
             queues,
             allocator,
             destroyed: false,
-            fps: FPS::new(),
+            fps: Fps::new(),
 
             profile: TracerProfile::default(),
 
@@ -491,8 +489,8 @@ impl TracerPipeline {
         );
         command_buffer.dispatch(
             device,
-            (extent.width + 15) / 16,
-            (extent.height + 15) / 16,
+            extent.width.div_ceil(16),
+            extent.height.div_ceil(16),
             1,
         );
 
@@ -602,7 +600,7 @@ impl TracerPipeline {
         let current_frame = self.current_frame;
         let status = device.get_fence_status(self.fences[current_frame])?;
         if status {
-            let mut need_timestamp = matches!(self.last_finished_frame, None);
+            let mut need_timestamp = self.last_finished_frame.is_none();
             if let Some(ms) = self.fetch_render_time(device)? {
                 self.profile.render_time = self.profile.render_time.lerp(ms, 0.01);
                 need_timestamp = true;
@@ -614,7 +612,7 @@ impl TracerPipeline {
 
             // If it's the first frame, we need to wait for the first frame
             // to finish rendering before we can present it.
-            if matches!(self.last_finished_frame, None) {
+            if self.last_finished_frame.is_none() {
                 debug!("Waiting for first frame to finish rendering");
                 device.wait_for_fences(&[self.fences[current_frame]], true, u64::MAX)?;
             }

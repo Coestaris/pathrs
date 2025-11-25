@@ -1,5 +1,4 @@
 use crate::assets::AssetManager;
-use crate::back::pipeline::TracerPipeline;
 use crate::back::{Back, BackQueues};
 use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
@@ -68,13 +67,12 @@ impl DebugMessenger {
     }
 
     pub(super) unsafe fn get_required_instance_extensions(
-        available: &Vec<String>,
+        available: &[String],
         capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         let mut required = vec![];
         if available.contains(&"VK_EXT_debug_utils".to_string()) {
-            const VK_EXT_DEBUG_UTILS: &CStr =
-                unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_EXT_debug_utils\0") };
+            const VK_EXT_DEBUG_UTILS: &CStr = c"VK_EXT_debug_utils";
             required.push(VK_EXT_DEBUG_UTILS.as_ptr());
             capabilities.debug_utils_ext = true;
         }
@@ -83,13 +81,12 @@ impl DebugMessenger {
     }
 
     pub(super) unsafe fn get_required_instance_layers(
-        available: &Vec<String>,
+        available: &[String],
         capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         let mut required = vec![];
         if available.contains(&"VK_LAYER_KHRONOS_validation".to_string()) {
-            const VK_LAYER_KHRONOS_VALIDATION: &CStr =
-                unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_LAYER_KHRONOS_validation\0") };
+            const VK_LAYER_KHRONOS_VALIDATION: &CStr = c"VK_LAYER_KHRONOS_validation";
             required.push(VK_LAYER_KHRONOS_VALIDATION.as_ptr());
             capabilities.validation_layer = true;
         }
@@ -101,7 +98,7 @@ impl DebugMessenger {
         capabilities.debug_utils_ext && capabilities.validation_layer
     }
 
-    pub unsafe fn destroy(&mut self, entry: &Entry, instance: &ash::Instance) {
+    pub unsafe fn destroy(&mut self, entry: &Entry, instance: &Instance) {
         if !self.destroyed {
             let debug_utils_loader = ash::ext::debug_utils::Instance::new(entry, instance);
             debug_utils_loader.destroy_debug_utils_messenger(self.handle, None);
@@ -111,8 +108,8 @@ impl DebugMessenger {
         }
     }
 
-    pub unsafe fn new(entry: &Entry, instance: &ash::Instance) -> anyhow::Result<Self> {
-        let debug_utils_loader = ash::ext::debug_utils::Instance::new(&entry, &instance);
+    pub unsafe fn new(entry: &Entry, instance: &Instance) -> anyhow::Result<Self> {
+        let debug_utils_loader = ash::ext::debug_utils::Instance::new(entry, instance);
         let create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
             .message_severity(
                 vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
@@ -144,12 +141,9 @@ impl Drop for DebugMessenger {
         }
     }
 }
-unsafe fn is_subset(
-    available: &Vec<String>,
-    required: &Vec<*const std::ffi::c_char>,
-) -> anyhow::Result<bool> {
+unsafe fn is_subset(available: &[String], required: &Vec<*const c_char>) -> anyhow::Result<bool> {
     for req in required {
-        let req_str = std::ffi::CStr::from_ptr(*req).to_string_lossy();
+        let req_str = CStr::from_ptr(*req).to_string_lossy();
         if !available.contains(&req_str.into_owned()) {
             return Ok(false);
         }

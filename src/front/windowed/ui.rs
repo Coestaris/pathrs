@@ -61,8 +61,11 @@ impl UICompositor {
 
                 ui.collapsing("Tracer Controls", |ui| {
                     ui.add(
-                        egui::Slider::new(&mut self.config.0.borrow_mut().slider, 0.0..=3.14)
-                            .text("Slider"),
+                        egui::Slider::new(
+                            &mut self.config.0.borrow_mut().slider,
+                            0.0..=std::f32::consts::PI,
+                        )
+                        .text("Slider"),
                     );
                 });
 

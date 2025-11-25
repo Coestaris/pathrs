@@ -2,7 +2,6 @@ use crate::common::command_buffer::CommandBuffer;
 use ash::{vk, Device};
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
-use std::mem::size_of;
 
 pub unsafe fn create_device_local_buffer_with_data<T: Copy>(
     device: &Device,
@@ -13,7 +12,7 @@ pub unsafe fn create_device_local_buffer_with_data<T: Copy>(
     data: &[T],
     name: &'static str,
 ) -> anyhow::Result<(vk::Buffer, Allocation)> {
-    let buffer_size = (size_of::<T>() * data.len()) as vk::DeviceSize;
+    let buffer_size = size_of_val(data) as vk::DeviceSize;
     let buffer_info = vk::BufferCreateInfo::default()
         .size(buffer_size)
         .usage(usage | vk::BufferUsageFlags::TRANSFER_DST)

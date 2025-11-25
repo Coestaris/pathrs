@@ -35,16 +35,16 @@ impl QueueFamilyIndices for WindowedQueueFamilyIndices {
     type Queues = WindowedQueues;
 
     fn as_families(&self) -> Vec<QueueFamily> {
-        let mut indices = vec![];
-        indices.push(QueueFamily {
-            index: self.graphics_family,
-            priorities: vec![1.0],
-        });
-        indices.push(QueueFamily {
-            index: self.present_family,
-            priorities: vec![1.0],
-        });
-        indices
+        vec![
+            QueueFamily {
+                index: self.graphics_family,
+                priorities: vec![1.0],
+            },
+            QueueFamily {
+                index: self.present_family,
+                priorities: vec![1.0],
+            },
+        ]
     }
 
     unsafe fn into_queues(self, device: &Device) -> anyhow::Result<Self::Queues> {

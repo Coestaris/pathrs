@@ -1,5 +1,5 @@
 use crate::get_build_info;
-use build_info::{BuildInfo, VersionControl};
+use build_info::VersionControl;
 use log::{info, Level, LevelFilter};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -13,7 +13,9 @@ fn format_system_time(system_time: SystemTime) -> Option<String> {
     Some(datetime.format("%Y-%m-%d %H:%M:%S UTC").to_string())
 }
 
-fn print_build_info(bi: &BuildInfo) {
+fn print_build_info() {
+    let bi = get_build_info();
+
     info!(r"$$$$$$$\   $$$$$$\ $$$$$$$$\ $$\   $$\ $$$$$$$\   $$$$$$\");
     info!(r"$$  __$$\ $$  __$$\\__$$  __|$$ |  $$ |$$  __$$\ $$  __$$\");
     info!(r"$$ |  $$ |$$ /  $$ |  $$ |   $$ |  $$ |$$ |  $$ |$$ /  \__|");
@@ -157,6 +159,5 @@ pub fn setup_logging(level: LevelFilter, file_logging: Option<PathBuf>, colored:
 
     dispatch.apply().unwrap();
 
-    let build_info = get_build_info();
-    print_build_info(&build_info);
+    print_build_info();
 }

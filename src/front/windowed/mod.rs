@@ -1,6 +1,6 @@
 use crate::assets::AssetManager;
 use crate::config::TracerConfig;
-use crate::fps::{FPSResult, FPS};
+use crate::fps::{FPSResult, Fps};
 use crate::front::windowed::front::TracerWindowedFront;
 use crate::front::windowed::ui::UICompositor;
 use crate::tracer::Tracer;
@@ -23,7 +23,7 @@ mod quad;
 mod ui;
 
 struct Context {
-    fps: FPS,
+    fps: Fps,
     window: Window,
     tracer: Tracer<TracerWindowedFront>,
     ui: Rc<RefCell<UICompositor>>,
@@ -34,14 +34,11 @@ impl Context {
         match fps {
             Some(fps) => format!(
                 "{} (v{}) - {:.2} FPS",
-                build_info.crate_info.name,
-                build_info.crate_info.version.to_string(),
-                fps
+                build_info.crate_info.name, build_info.crate_info.version, fps
             ),
             None => format!(
                 "{} (v{})",
-                build_info.crate_info.name,
-                build_info.crate_info.version.to_string()
+                build_info.crate_info.name, build_info.crate_info.version
             ),
         }
     }
@@ -119,7 +116,7 @@ impl ApplicationHandler for TracerApp {
         };
 
         self.context = Some(Context {
-            fps: FPS::new(),
+            fps: Fps::new(),
             window,
             tracer,
             ui,
