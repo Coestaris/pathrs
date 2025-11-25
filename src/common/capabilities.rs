@@ -1,10 +1,10 @@
 #[allow(dead_code)]
-pub struct InstanceCompatibilities {
+pub struct InstanceCapabilities {
     pub debug_utils_ext: bool,
     pub validation_layer: bool,
 }
 
-impl Default for InstanceCompatibilities {
+impl Default for InstanceCapabilities {
     fn default() -> Self {
         Self {
             debug_utils_ext: false,
@@ -13,9 +13,9 @@ impl Default for InstanceCompatibilities {
     }
 }
 
-pub struct DeviceCompatibilities {}
+pub struct DeviceCapabilities {}
 
-impl Default for DeviceCompatibilities {
+impl Default for DeviceCapabilities {
     fn default() -> Self {
         Self {}
     }

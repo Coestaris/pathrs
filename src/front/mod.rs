@@ -1,4 +1,4 @@
-use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
+use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
 use ash::{vk, Device};
 use gpu_allocator::vulkan::Allocator;
@@ -22,14 +22,14 @@ pub trait Front {
 
     unsafe fn get_required_instance_extensions(
         _available: &Vec<String>,
-        _compatibilities: &mut InstanceCompatibilities,
+        _capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }
 
     unsafe fn get_required_instance_layers(
         _available: &Vec<String>,
-        _compatibilities: &mut InstanceCompatibilities,
+        _capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }
@@ -37,7 +37,7 @@ pub trait Front {
     unsafe fn get_required_device_extensions(
         &self,
         _available: &Vec<String>,
-        _compatibilities: &mut DeviceCompatibilities,
+        _capabilities: &mut DeviceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }

@@ -1,5 +1,5 @@
 pub mod buffer;
 pub mod command_buffer;
-pub mod compatibilities;
+pub mod capabilities;
 pub mod queue;
 pub mod shader;

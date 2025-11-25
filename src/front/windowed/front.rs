@@ -1,5 +1,5 @@
 use crate::assets::AssetManager;
-use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
+use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
 use crate::front::windowed::pipeline::PresentationPipeline;
 use crate::front::windowed::ui::UICompositor;
@@ -228,7 +228,7 @@ impl Front for TracerWindowedFront {
 
     unsafe fn get_required_instance_extensions(
         _available: &Vec<String>,
-        _compatibilities: &mut InstanceCompatibilities,
+        _capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![
             vk::KHR_SURFACE_NAME.as_ptr(),
@@ -247,7 +247,7 @@ impl Front for TracerWindowedFront {
 
     unsafe fn get_required_instance_layers(
         _available: &Vec<String>,
-        _compatibilities: &mut InstanceCompatibilities,
+        _capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }
@@ -255,7 +255,7 @@ impl Front for TracerWindowedFront {
     unsafe fn get_required_device_extensions(
         &self,
         _available: &Vec<String>,
-        _compatibilities: &mut DeviceCompatibilities,
+        _capabilities: &mut DeviceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![vk::KHR_SWAPCHAIN_NAME.as_ptr()])
     }

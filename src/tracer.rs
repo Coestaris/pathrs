@@ -1,7 +1,7 @@
 use crate::assets::AssetManager;
 use crate::back::pipeline::TracerPipeline;
 use crate::back::{Back, BackQueues};
-use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
+use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
 use crate::config::TracerConfig;
 use crate::fps::FPSResult;
@@ -69,14 +69,14 @@ impl DebugMessenger {
 
     pub(super) unsafe fn get_required_instance_extensions(
         available: &Vec<String>,
-        compatibilities: &mut InstanceCompatibilities,
+        capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         let mut required = vec![];
         if available.contains(&"VK_EXT_debug_utils".to_string()) {
             const VK_EXT_DEBUG_UTILS: &CStr =
                 unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_EXT_debug_utils\0") };
             required.push(VK_EXT_DEBUG_UTILS.as_ptr());
-            compatibilities.debug_utils_ext = true;
+            capabilities.debug_utils_ext = true;
         }
 
         Ok(required)
@@ -84,21 +84,21 @@ impl DebugMessenger {
 
     pub(super) unsafe fn get_required_instance_layers(
         available: &Vec<String>,
-        compatibilities: &mut InstanceCompatibilities,
+        capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         let mut required = vec![];
         if available.contains(&"VK_LAYER_KHRONOS_validation".to_string()) {
             const VK_LAYER_KHRONOS_VALIDATION: &CStr =
                 unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_LAYER_KHRONOS_validation\0") };
             required.push(VK_LAYER_KHRONOS_VALIDATION.as_ptr());
-            compatibilities.validation_layer = true;
+            capabilities.validation_layer = true;
         }
 
         Ok(required)
     }
 
-    pub unsafe fn available(compatibilities: &InstanceCompatibilities) -> bool {
-        compatibilities.debug_utils_ext && compatibilities.validation_layer
+    pub unsafe fn available(capabilities: &InstanceCapabilities) -> bool {
+        capabilities.debug_utils_ext && capabilities.validation_layer
     }
 
     pub unsafe fn destroy(&mut self, entry: &Entry, instance: &ash::Instance) {
@@ -223,20 +223,20 @@ impl<F: Front> Tracer<F> {
         _instance: &ash::Instance,
         available: &Vec<String>,
         front: &F,
-        compatibilities: &mut DeviceCompatibilities,
+        capabilities: &mut DeviceCapabilities,
     ) -> anyhow::Result<Vec<*const std::ffi::c_char>> {
         let mut required = vec![];
-        required.extend(front.get_required_device_extensions(available, compatibilities)?);
+        required.extend(front.get_required_device_extensions(available, capabilities)?);
         required.extend(Back::get_required_device_extensions(
             available,
-            compatibilities,
+            capabilities,
         )?);
         Ok(required)
     }
 
     unsafe fn get_required_instance_extensions(
         entry: &Entry,
-        compatibilities: &mut InstanceCompatibilities,
+        capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         let extensions = Self::get_instance_extensions(entry)?;
         debug!("Available instance extensions: {:?}", extensions);
@@ -244,22 +244,22 @@ impl<F: Front> Tracer<F> {
         let mut required = vec![];
         required.extend(DebugMessenger::get_required_instance_extensions(
             &extensions,
-            compatibilities,
+            capabilities,
         )?);
         required.extend(F::get_required_instance_extensions(
             &extensions,
-            compatibilities,
+            capabilities,
         )?);
         required.extend(Back::get_required_instance_extensions(
             &extensions,
-            compatibilities,
+            capabilities,
         )?);
         Ok(required)
     }
 
     unsafe fn get_required_instance_layers(
         entry: &Entry,
-        compatibilities: &mut InstanceCompatibilities,
+        capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         let layers = Self::get_instance_layers(entry)?;
         debug!("Available instance layers: {:?}", layers);
@@ -268,12 +268,12 @@ impl<F: Front> Tracer<F> {
         #[cfg(debug_assertions)]
         required.extend(DebugMessenger::get_required_instance_layers(
             &layers,
-            compatibilities,
+            capabilities,
         )?);
-        required.extend(F::get_required_instance_layers(&layers, compatibilities)?);
+        required.extend(F::get_required_instance_layers(&layers, capabilities)?);
         required.extend(Back::get_required_instance_layers(
             &layers,
-            compatibilities,
+            capabilities,
         )?);
         Ok(required)
     }
@@ -285,7 +285,7 @@ impl<F: Front> Tracer<F> {
     pub unsafe fn new_instance(
         entry: &Entry,
         bi: BuildInfo,
-    ) -> anyhow::Result<(ash::Instance, InstanceCompatibilities)> {
+    ) -> anyhow::Result<(ash::Instance, InstanceCapabilities)> {
         let app_name = CString::new(bi.crate_info.name)?;
         let app_version = bi.crate_info.version;
         let app_version = vk::make_api_version(
@@ -305,10 +305,10 @@ impl<F: Front> Tracer<F> {
             .engine_version(engine_version)
             .api_version(api_version);
 
-        let mut compatibilities = InstanceCompatibilities::default();
+        let mut capabilities = InstanceCapabilities::default();
         let instance_extensions =
-            Self::get_required_instance_extensions(entry, &mut compatibilities)?;
-        let instance_layers = Self::get_required_instance_layers(entry, &mut compatibilities)?;
+            Self::get_required_instance_extensions(entry, &mut capabilities)?;
+        let instance_layers = Self::get_required_instance_layers(entry, &mut capabilities)?;
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(&instance_extensions)
@@ -318,7 +318,7 @@ impl<F: Front> Tracer<F> {
             entry
                 .create_instance(&create_info, None)
                 .context("Failed to create Vulkan instance")?,
-            compatibilities,
+            capabilities,
         ))
     }
 
@@ -326,7 +326,7 @@ impl<F: Front> Tracer<F> {
         entry: &ash::Entry,
         instance: &ash::Instance,
         front: &F,
-        compatibilities: &mut DeviceCompatibilities,
+        capabilities: &mut DeviceCapabilities,
         device: vk::PhysicalDevice,
     ) -> bool {
         let extensions = Self::get_device_extensions(instance, device).unwrap_or(vec![]);
@@ -335,7 +335,7 @@ impl<F: Front> Tracer<F> {
             instance,
             &extensions,
             front,
-            compatibilities,
+            capabilities,
         )
         .unwrap_or(vec![]);
         let extensions_ok = is_subset(&extensions, &required_extensions).unwrap_or(false);
@@ -366,10 +366,10 @@ impl<F: Front> Tracer<F> {
             .context("Failed to enumerate physical devices")?;
 
         for device in devices {
-            let mut compatibilities = DeviceCompatibilities::default();
+            let mut capabilities = DeviceCapabilities::default();
 
             // TODO: Implement some kind of scoring system for compatibility
-            if Self::is_device_suitable(entry, instance, front, &mut compatibilities, device) {
+            if Self::is_device_suitable(entry, instance, front, &mut capabilities, device) {
                 return Ok(device);
             }
         }
@@ -407,14 +407,14 @@ impl<F: Front> Tracer<F> {
     )> {
         let physical_device = Self::find_suitable_device(entry, instance, front)?;
 
-        let mut compatibilities = DeviceCompatibilities::default();
+        let mut capabilities = DeviceCapabilities::default();
         let extensions = Self::get_device_extensions(instance, physical_device)?;
         let extensions = Self::get_required_device_extensions(
             entry,
             instance,
             &extensions,
             front,
-            &mut compatibilities,
+            &mut capabilities,
         )?;
 
         let back_queues = Back::find_queue_families(entry, instance, physical_device)?;
@@ -493,14 +493,14 @@ impl<F: Front> Tracer<F> {
         let entry = Self::new_entry()?;
 
         info!("Created Vulkan entry");
-        let (instance, _instance_compatibilities) = Self::new_instance(&entry, bi)?;
+        let (instance, _instance_capabilities) = Self::new_instance(&entry, bi)?;
 
         info!("Created Front");
         let mut front =
             constructor(&entry, &instance).context("Failed to create tracer front-end")?;
 
         #[cfg(debug_assertions)]
-        let debug_messenger = if DebugMessenger::available(&_instance_compatibilities) {
+        let debug_messenger = if DebugMessenger::available(&_instance_capabilities) {
             info!("Setting up debug messanger");
             Some(
                 DebugMessenger::new(&entry, &instance)

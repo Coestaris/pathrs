@@ -6,7 +6,7 @@ use crate::assets::AssetManager;
 use crate::back::pipeline::TracerPipeline;
 use crate::back::push_constants::PushConstantsData;
 use crate::back::ssbo::ParametersSSBOData;
-use crate::common::compatibilities::{DeviceCompatibilities, InstanceCompatibilities};
+use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
 use crate::config::TracerConfig;
 use crate::front::QueueFamilyIndices;
@@ -79,21 +79,21 @@ pub struct Back {
 impl Back {
     pub unsafe fn get_required_instance_extensions(
         _available: &Vec<String>,
-        _compatibilities: &mut InstanceCompatibilities,
+        _capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }
 
     pub unsafe fn get_required_instance_layers(
         _available: &Vec<String>,
-        _compatibilities: &mut InstanceCompatibilities,
+        _capabilities: &mut InstanceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![])
     }
 
     pub unsafe fn get_required_device_extensions(
         _available: &Vec<String>,
-        _compatibilities: &mut DeviceCompatibilities,
+        _capabilities: &mut DeviceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
         Ok(vec![ash::ext::buffer_device_address::NAME.as_ptr()])
     }
