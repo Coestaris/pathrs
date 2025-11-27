@@ -6,7 +6,6 @@ use crate::config::TracerConfig;
 use crate::fps::FPSResult;
 use crate::front::{Front, QueueFamilyIndices};
 use anyhow::Context;
-use ash::vk::{DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceFeatures};
 use ash::{vk, Device, Entry, Instance};
 use build_info::BuildInfo;
 use glam::UVec2;
@@ -27,11 +26,12 @@ pub struct DebugMessenger {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 pub struct Bundle<'a> {
     pub entry: &'a Entry,
     pub instance: &'a Instance,
     pub device: &'a Device,
-    pub physical_device: PhysicalDevice,
+    pub physical_device: vk::PhysicalDevice,
     pub device_capabilities: &'a DeviceCapabilities,
     pub instance_capabilities: &'a InstanceCapabilities,
     pub allocator: &'a Arc<Mutex<Allocator>>,
@@ -178,8 +178,8 @@ pub struct Tracer<F: Front> {
     entry: Entry,
     instance: Instance,
     debug_messenger: Option<DebugMessenger>,
-    physical_device: PhysicalDevice,
-    logical_device: ash::Device,
+    physical_device: vk::PhysicalDevice,
+    logical_device: Device,
     allocator: Option<Arc<Mutex<Allocator>>>,
 
     device_capabilities: DeviceCapabilities,
@@ -216,7 +216,7 @@ impl<F: Front> Tracer<F> {
     }
 
     unsafe fn get_device_extensions(
-        instance: &ash::Instance,
+        instance: &Instance,
         device: vk::PhysicalDevice,
     ) -> anyhow::Result<Vec<String>> {
         let extension_properties = instance
@@ -225,7 +225,7 @@ impl<F: Front> Tracer<F> {
         let extensions = extension_properties
             .iter()
             .map(|ext| {
-                let ext_name = unsafe { std::ffi::CStr::from_ptr(ext.extension_name.as_ptr()) };
+                let ext_name = unsafe { CStr::from_ptr(ext.extension_name.as_ptr()) };
                 ext_name.to_string_lossy().into_owned()
             })
             .collect();
@@ -233,12 +233,12 @@ impl<F: Front> Tracer<F> {
     }
 
     unsafe fn get_required_device_extensions(
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
+        _entry: &Entry,
+        _instance: &Instance,
         available: &Vec<String>,
         front: &F,
         capabilities: &mut DeviceCapabilities,
-    ) -> anyhow::Result<Vec<*const std::ffi::c_char>> {
+    ) -> anyhow::Result<Vec<*const c_char>> {
         let mut required = vec![];
         required.extend(front.get_required_device_extensions(available, capabilities)?);
         required.extend(Back::get_required_device_extensions(
@@ -296,7 +296,7 @@ impl<F: Front> Tracer<F> {
     pub unsafe fn new_instance(
         entry: &Entry,
         bi: BuildInfo,
-    ) -> anyhow::Result<(ash::Instance, InstanceCapabilities)> {
+    ) -> anyhow::Result<(Instance, InstanceCapabilities)> {
         let app_name = CString::new(bi.crate_info.name)?;
         let app_version = bi.crate_info.version;
         let app_version = vk::make_api_version(
@@ -333,8 +333,8 @@ impl<F: Front> Tracer<F> {
     }
 
     unsafe fn is_device_suitable(
-        entry: &ash::Entry,
-        instance: &ash::Instance,
+        entry: &Entry,
+        instance: &Instance,
         front: &F,
         capabilities: &mut DeviceCapabilities,
         device: vk::PhysicalDevice,
@@ -362,8 +362,8 @@ impl<F: Front> Tracer<F> {
     }
 
     unsafe fn find_suitable_device(
-        entry: &ash::Entry,
-        instance: &ash::Instance,
+        entry: &Entry,
+        instance: &Instance,
         front: &F,
     ) -> anyhow::Result<vk::PhysicalDevice> {
         let devices = instance
@@ -384,8 +384,8 @@ impl<F: Front> Tracer<F> {
 
     unsafe fn new_allocator(
         instance: Instance,
-        device: ash::Device,
-        physical_device: PhysicalDevice,
+        device: Device,
+        physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<Arc<Mutex<Allocator>>> {
         Ok(Arc::new(Mutex::new(Allocator::new(
             &AllocatorCreateDesc {
@@ -400,7 +400,7 @@ impl<F: Front> Tracer<F> {
     }
 
     pub unsafe fn new_device(
-        entry: &ash::Entry,
+        entry: &Entry,
         instance: &Instance,
         front: &mut F,
     ) -> anyhow::Result<(
@@ -409,7 +409,7 @@ impl<F: Front> Tracer<F> {
         BackQueues,
         <<F as Front>::FrontQueueFamilyIndices as QueueFamilyIndices>::Queues,
         vk::PhysicalDevice,
-        ash::Device,
+        Device,
     )> {
         let physical_device = Self::find_suitable_device(entry, instance, front)?;
 
@@ -437,13 +437,13 @@ impl<F: Front> Tracer<F> {
         let queue_create_infos = queue_family_infos
             .iter()
             .map(|qfi| {
-                DeviceQueueCreateInfo::default()
+                vk::DeviceQueueCreateInfo::default()
                     .queue_family_index(qfi.index)
                     .queue_priorities(&qfi.priorities)
                     .flags(vk::DeviceQueueCreateFlags::empty())
             })
             .collect::<Vec<_>>();
-        let features = PhysicalDeviceFeatures::default();
+        let features = vk::PhysicalDeviceFeatures::default();
         let device_create_info = vk::DeviceCreateInfo::default()
             .enabled_extension_names(&extensions)
             .queue_create_infos(&queue_create_infos)

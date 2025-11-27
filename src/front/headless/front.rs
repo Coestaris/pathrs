@@ -4,8 +4,7 @@ use crate::common::queue::QueueFamily;
 use crate::front::headless::TracerHeadlessOutput;
 use crate::front::{Front, QueueFamilyIndices};
 use crate::tracer::Bundle;
-use ash::vk::PhysicalDevice;
-use ash::{Device, Entry, Instance};
+use ash::{vk, Device, Entry, Instance};
 use log::info;
 use std::ffi::{c_char, CStr};
 
@@ -68,7 +67,7 @@ impl Front for TracerHeadlessFront {
         &self,
         _entry: &Entry,
         _instance: &Instance,
-        _physical_device: PhysicalDevice,
+        _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<HeadlessQueueFamilyIndices> {
         Ok(HeadlessQueueFamilyIndices {})
     }

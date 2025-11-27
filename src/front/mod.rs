@@ -2,7 +2,7 @@ use crate::back::TracerSlot;
 use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
 use crate::tracer::Bundle;
-use ash::{vk, Device};
+use ash::{vk, Device, Entry, Instance};
 use std::ffi::c_char;
 use std::fmt::Debug;
 
@@ -43,8 +43,8 @@ pub trait Front {
 
     unsafe fn is_device_suitable(
         &self,
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
+        _entry: &Entry,
+        _instance: &Instance,
         _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<bool> {
         Ok(true)
@@ -52,19 +52,19 @@ pub trait Front {
 
     unsafe fn find_queue_families(
         &self,
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
+        _entry: &Entry,
+        _instance: &Instance,
         _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<Self::FrontQueueFamilyIndices>;
 
     unsafe fn patch_create_device_info(
         &self,
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
+        _entry: &Entry,
+        _instance: &Instance,
         _physical_device: vk::PhysicalDevice,
         create_info: vk::DeviceCreateInfo,
-        on_patched: &mut impl FnMut(vk::DeviceCreateInfo) -> anyhow::Result<ash::Device>,
-    ) -> anyhow::Result<ash::Device> {
+        on_patched: &mut impl FnMut(vk::DeviceCreateInfo) -> anyhow::Result<Device>,
+    ) -> anyhow::Result<Device> {
         on_patched(create_info)
     }
 

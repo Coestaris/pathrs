@@ -8,7 +8,6 @@ use crate::fps::Fps;
 use crate::tracer::{Bundle, TracerProfile};
 use anyhow::Context;
 use ash::vk;
-use ash::vk::Extent2D;
 use glam::FloatExt;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use log::{debug, warn};
@@ -452,7 +451,7 @@ impl TracerPipeline {
         descriptor_set_1: vk::DescriptorSet,
         image: vk::Image,
         need_timestamp: bool,
-        extent: Extent2D,
+        extent: vk::Extent2D,
         push_constants_data: PushConstantsData,
     ) -> anyhow::Result<()> {
         command_buffer.reset(bundle)?;
@@ -592,7 +591,7 @@ impl TracerPipeline {
                 let render_time_ms = (delta as f64 * self.timestamp_period as f64) / 1_000_000.0;
                 Ok(Some(render_time_ms as f32))
             }
-            Err(ash::vk::Result::NOT_READY) => Ok(None),
+            Err(vk::Result::NOT_READY) => Ok(None),
             Err(e) => Err(anyhow::anyhow!("Failed to get query pool results: {:?}", e)),
         }
     }

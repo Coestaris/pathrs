@@ -7,7 +7,7 @@ use crate::front::windowed::ui::UICompositor;
 use crate::front::{Front, QueueFamilyIndices};
 use crate::tracer::Bundle;
 use anyhow::Context;
-use ash::{vk, Device};
+use ash::{vk, Device, Entry, Instance};
 use log::{debug, warn};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void};
@@ -101,8 +101,8 @@ impl Mode {
 
     pub unsafe fn supports_present(
         &self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
+        entry: &Entry,
+        instance: &Instance,
         physical_device: vk::PhysicalDevice,
         queue_family_index: u32,
     ) -> bool {
@@ -139,8 +139,8 @@ impl Mode {
 
     pub unsafe fn create_surface(
         &self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
+        entry: &Entry,
+        instance: &Instance,
     ) -> anyhow::Result<vk::SurfaceKHR> {
         match self {
             Mode::XLib { window, display } => {
@@ -181,8 +181,8 @@ pub struct TracerWindowedFront {
 impl TracerWindowedFront {
     pub unsafe fn new(
         asset_manager: AssetManager,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
+        entry: &Entry,
+        instance: &Instance,
         viewport: glam::UVec2,
         window: WindowHandle,
         display: DisplayHandle,
@@ -203,8 +203,8 @@ impl TracerWindowedFront {
 
     unsafe fn is_swapchain_format_supported(
         &self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
+        entry: &Entry,
+        instance: &Instance,
         physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<bool> {
         let surface_loader = ash::khr::surface::Instance::new(entry, instance);
@@ -261,8 +261,8 @@ impl Front for TracerWindowedFront {
 
     unsafe fn is_device_suitable(
         &self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
+        entry: &Entry,
+        instance: &Instance,
         physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<bool> {
         let queues_ok = self
@@ -281,8 +281,8 @@ impl Front for TracerWindowedFront {
 
     unsafe fn find_queue_families(
         &self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
+        entry: &Entry,
+        instance: &Instance,
         physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<WindowedQueueFamilyIndices> {
         let mut graphics_family = None;
