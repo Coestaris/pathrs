@@ -5,7 +5,7 @@ use crate::back::{BackQueues, TracerSlot};
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
 use crate::fps::Fps;
-use crate::tracer::TracerProfile;
+use crate::tracer::{Bundle, TracerProfile};
 use anyhow::Context;
 use ash::vk::{Extent2D, PhysicalDevice};
 use ash::{vk, Device, Instance};
@@ -19,7 +19,6 @@ const MAX_DEPTH: usize = 2;
 
 pub(crate) struct TracerPipeline {
     queues: BackQueues,
-    allocator: Arc<Mutex<Allocator>>,
     destroyed: bool,
     fps: Fps,
     profile: TracerProfile,
@@ -60,42 +59,34 @@ pub(crate) struct TracerPipeline {
 
 impl TracerPipeline {
     pub unsafe fn new(
-        allocator: Arc<Mutex<Allocator>>,
+        bundle: Bundle,
         asset_manager: AssetManager,
         viewport: glam::UVec2,
-        instance: &ash::Instance,
-        physical_device: PhysicalDevice,
-        device: &Device,
         queues: BackQueues,
     ) -> anyhow::Result<Self> {
-        let (command_pool, command_buffers) = Self::create_command_buffers(device, &queues)
+        let (command_pool, command_buffers) = Self::create_command_buffers(bundle, &queues)
             .context("Failed to create command buffers")?;
 
-        let (images, image_views, image_samplers, image_allocations) = Self::create_images(
-            &mut allocator.lock().unwrap(),
-            device,
-            &queues,
-            command_pool,
-            viewport,
-        )
-        .context("Failed to create images")?;
+        let (images, image_views, image_samplers, image_allocations) =
+            Self::create_images(bundle, &queues, command_pool, viewport)
+                .context("Failed to create images")?;
 
         debug!("Creating parameters SSBO");
-        let parameters_ssbo = ParametersSSBO::new(device, &mut allocator.lock().unwrap())
-            .context("Failed to create parameters SSBO")?;
+        let parameters_ssbo =
+            ParametersSSBO::new(bundle).context("Failed to create parameters SSBO")?;
 
         let (descriptor_set_layout_0, descriptor_pool_0, descriptor_sets_0) =
-            Self::create_descriptor_set_0(device, &image_views)
+            Self::create_descriptor_set_0(bundle, &image_views)
                 .context("Failed to create descriptor set 0 layout")?;
         let (descriptor_set_layout_1, descriptor_pool_1, descriptor_set_1) =
-            Self::create_descriptor_set_1(device, &parameters_ssbo)
+            Self::create_descriptor_set_1(bundle, &parameters_ssbo)
                 .context("Failed to create descriptor set 1 layout")?;
 
         debug!("Creating compute shader");
         let compute_shader = asset_manager
             .load_asset(COMPUTE_ASSET)
             .context("Failed to load compute shader asset")?;
-        let compute_shader = Shader::new_from_spirv(device, compute_shader.get_spirv()?)
+        let compute_shader = Shader::new_from_spirv(bundle, compute_shader.get_spirv()?)
             .context("Failed to create compute shader")?;
 
         let stage = vk::PipelineShaderStageCreateInfo::default()
@@ -105,7 +96,7 @@ impl TracerPipeline {
 
         debug!("Creating pipeline");
         let (pipeline_layout, pipeline) = Self::create_pipeline(
-            device,
+            bundle,
             descriptor_set_layout_0,
             descriptor_set_layout_1,
             &stage,
@@ -113,15 +104,13 @@ impl TracerPipeline {
         .context("Failed to create pipeline")?;
 
         debug!("Creating sync objects");
-        let fences = Self::create_sync_objects(device).context("Failed to create fences")?;
+        let fences = Self::create_sync_objects(bundle).context("Failed to create fences")?;
 
         debug!("Creating query pool");
-        let (query_pool, timestamp_period) =
-            Self::create_query_pool(instance, physical_device, device)?;
+        let (query_pool, timestamp_period) = Self::create_query_pool(bundle)?;
 
         Ok(Self {
             queues,
-            allocator,
             destroyed: false,
             fps: Fps::new(),
 
@@ -154,29 +143,27 @@ impl TracerPipeline {
         })
     }
 
-    unsafe fn create_query_pool(
-        instance: &Instance,
-        physical_device: PhysicalDevice,
-        device: &Device,
-    ) -> anyhow::Result<(vk::QueryPool, f32)> {
+    unsafe fn create_query_pool(bundle: Bundle) -> anyhow::Result<(vk::QueryPool, f32)> {
         let query_pool_info = vk::QueryPoolCreateInfo::default()
             .query_type(vk::QueryType::TIMESTAMP)
             .query_count(2);
-        let query_pool = device.create_query_pool(&query_pool_info, None)?;
+        let query_pool = bundle.device.create_query_pool(&query_pool_info, None)?;
 
-        device.reset_query_pool(query_pool, 0, 2);
+        bundle.device.reset_query_pool(query_pool, 0, 2);
 
-        let props = instance.get_physical_device_properties(physical_device);
+        let props = bundle
+            .instance
+            .get_physical_device_properties(bundle.physical_device);
         let timestamp_period = props.limits.timestamp_period;
 
         Ok((query_pool, timestamp_period))
     }
 
-    unsafe fn create_sync_objects(device: &Device) -> anyhow::Result<Vec<vk::Fence>> {
+    unsafe fn create_sync_objects(bundle: Bundle) -> anyhow::Result<Vec<vk::Fence>> {
         let mut fences = Vec::with_capacity(MAX_DEPTH);
         let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
         for _ in 0..MAX_DEPTH {
-            let fence = device.create_fence(&fence_info, None)?;
+            let fence = bundle.device.create_fence(&fence_info, None)?;
             fences.push(fence);
         }
 
@@ -184,8 +171,7 @@ impl TracerPipeline {
     }
 
     unsafe fn create_images(
-        allocator: &mut Allocator,
-        device: &Device,
+        bundle: Bundle,
         queues: &BackQueues,
         command_pool: vk::CommandPool,
         viewport: glam::UVec2,
@@ -221,10 +207,10 @@ impl TracerPipeline {
                 .sharing_mode(vk::SharingMode::CONCURRENT)
                 .queue_family_indices(&queue_family_indices)
                 .initial_layout(vk::ImageLayout::UNDEFINED);
-            let image = device.create_image(&create_image_info, None)?;
+            let image = bundle.device.create_image(&create_image_info, None)?;
 
-            let mem_requirements = device.get_image_memory_requirements(image);
-            let allocation = allocator.allocate(&AllocationCreateDesc {
+            let mem_requirements = bundle.device.get_image_memory_requirements(image);
+            let allocation = bundle.allocator().allocate(&AllocationCreateDesc {
                 name: format!("Tracer Pipeline Image Allocation {}", depth).as_str(),
                 requirements: mem_requirements,
                 location: gpu_allocator::MemoryLocation::GpuOnly,
@@ -232,7 +218,9 @@ impl TracerPipeline {
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
             })?;
 
-            device.bind_image_memory(image, allocation.memory(), allocation.offset())?;
+            bundle
+                .device
+                .bind_image_memory(image, allocation.memory(), allocation.offset())?;
             images.push(image);
             image_allocations.push(allocation);
 
@@ -248,12 +236,12 @@ impl TracerPipeline {
                         .base_array_layer(0)
                         .layer_count(1),
                 );
-            let image_view = device.create_image_view(&image_view_info, None)?;
+            let image_view = bundle.device.create_image_view(&image_view_info, None)?;
             image_views.push(image_view);
 
             // Transition undefined memory layout to the general
-            let mut command_buffer = CommandBuffer::new_from_pool(device, command_pool)?;
-            command_buffer.begin(device)?;
+            let mut command_buffer = CommandBuffer::new_from_pool(bundle, command_pool)?;
+            command_buffer.begin(bundle)?;
             let barrier = vk::ImageMemoryBarrier::default()
                 .old_layout(vk::ImageLayout::UNDEFINED)
                 .new_layout(vk::ImageLayout::GENERAL)
@@ -270,7 +258,7 @@ impl TracerPipeline {
                 )
                 .src_access_mask(vk::AccessFlags::empty())
                 .dst_access_mask(vk::AccessFlags::SHADER_WRITE);
-            device.cmd_pipeline_barrier(
+            bundle.device.cmd_pipeline_barrier(
                 command_buffer.as_inner(),
                 vk::PipelineStageFlags::TOP_OF_PIPE,
                 vk::PipelineStageFlags::COMPUTE_SHADER,
@@ -279,11 +267,13 @@ impl TracerPipeline {
                 &[],
                 &[barrier],
             );
-            command_buffer.end(device)?;
+            command_buffer.end(bundle)?;
             let submit_info = command_buffer.as_submit_info();
-            device.queue_submit(queues.compute_queue, &[submit_info], vk::Fence::null())?;
-            device.queue_wait_idle(queues.compute_queue)?;
-            command_buffer.destroy(command_pool, device);
+            bundle
+                .device
+                .queue_submit(queues.compute_queue, &[submit_info], vk::Fence::null())?;
+            bundle.device.queue_wait_idle(queues.compute_queue)?;
+            command_buffer.destroy(bundle, command_pool);
 
             let sampler_info = vk::SamplerCreateInfo::default()
                 .mag_filter(vk::Filter::LINEAR)
@@ -295,7 +285,7 @@ impl TracerPipeline {
                 .mip_lod_bias(0.0)
                 .compare_op(vk::CompareOp::NEVER)
                 .min_lod(0.0);
-            let sampler = device.create_sampler(&sampler_info, None)?;
+            let sampler = bundle.device.create_sampler(&sampler_info, None)?;
             image_samplers.push(sampler);
         }
 
@@ -303,23 +293,25 @@ impl TracerPipeline {
     }
 
     unsafe fn create_command_buffers(
-        device: &Device,
+        bundle: Bundle,
         queues: &BackQueues,
     ) -> anyhow::Result<(vk::CommandPool, Vec<CommandBuffer>)> {
         let command_pool_info = vk::CommandPoolCreateInfo::default()
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
             .queue_family_index(queues.indices.compute_family);
-        let command_pool = device.create_command_pool(&command_pool_info, None)?;
+        let command_pool = bundle
+            .device
+            .create_command_pool(&command_pool_info, None)?;
 
         let command_buffer = (0..MAX_DEPTH)
-            .map(|_| CommandBuffer::new_from_pool(device, command_pool))
+            .map(|_| CommandBuffer::new_from_pool(bundle, command_pool))
             .collect::<anyhow::Result<Vec<CommandBuffer>>>()?;
 
         Ok((command_pool, command_buffer))
     }
 
     unsafe fn create_descriptor_set_0(
-        device: &Device,
+        bundle: Bundle,
         image_views: &[vk::ImageView],
     ) -> anyhow::Result<(
         vk::DescriptorSetLayout,
@@ -337,8 +329,9 @@ impl TracerPipeline {
 
         let descriptor_layout_info =
             vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
-        let descriptor_set_layout =
-            device.create_descriptor_set_layout(&descriptor_layout_info, None)?;
+        let descriptor_set_layout = bundle
+            .device
+            .create_descriptor_set_layout(&descriptor_layout_info, None)?;
 
         let descriptor_pool_sizes = [vk::DescriptorPoolSize::default()
             .ty(vk::DescriptorType::STORAGE_IMAGE)
@@ -346,13 +339,15 @@ impl TracerPipeline {
         let descriptor_pool_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&descriptor_pool_sizes)
             .max_sets(MAX_DEPTH as u32);
-        let descriptor_pool = device.create_descriptor_pool(&descriptor_pool_info, None)?;
+        let descriptor_pool = bundle
+            .device
+            .create_descriptor_pool(&descriptor_pool_info, None)?;
 
         let layout_handles = vec![descriptor_set_layout; MAX_DEPTH];
         let alloc_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(descriptor_pool)
             .set_layouts(&layout_handles);
-        let descriptor_sets = device.allocate_descriptor_sets(&alloc_info)?;
+        let descriptor_sets = bundle.device.allocate_descriptor_sets(&alloc_info)?;
 
         for (i, descriptor_set) in descriptor_sets.iter().enumerate() {
             let out_image_info = vk::DescriptorImageInfo::default()
@@ -364,14 +359,14 @@ impl TracerPipeline {
                 .dst_binding(0)
                 .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
                 .image_info(std::slice::from_ref(&out_image_info))];
-            device.update_descriptor_sets(&writes, &[]);
+            bundle.device.update_descriptor_sets(&writes, &[]);
         }
 
         Ok((descriptor_set_layout, descriptor_pool, descriptor_sets))
     }
 
     unsafe fn create_descriptor_set_1(
-        device: &Device,
+        bundle: Bundle,
         parameters_ssbo: &ParametersSSBO,
     ) -> anyhow::Result<(
         vk::DescriptorSetLayout,
@@ -389,8 +384,9 @@ impl TracerPipeline {
 
         let descriptor_layout_info =
             vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
-        let descriptor_set_layout =
-            device.create_descriptor_set_layout(&descriptor_layout_info, None)?;
+        let descriptor_set_layout = bundle
+            .device
+            .create_descriptor_set_layout(&descriptor_layout_info, None)?;
 
         let descriptor_pool_sizes = [vk::DescriptorPoolSize::default()
             .ty(vk::DescriptorType::STORAGE_BUFFER)
@@ -398,13 +394,15 @@ impl TracerPipeline {
         let descriptor_pool_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&descriptor_pool_sizes)
             .max_sets(1);
-        let descriptor_pool = device.create_descriptor_pool(&descriptor_pool_info, None)?;
+        let descriptor_pool = bundle
+            .device
+            .create_descriptor_pool(&descriptor_pool_info, None)?;
 
         let layout_handles = vec![descriptor_set_layout; 1];
         let alloc_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(descriptor_pool)
             .set_layouts(&layout_handles);
-        let descriptor_sets = device.allocate_descriptor_sets(&alloc_info)?;
+        let descriptor_sets = bundle.device.allocate_descriptor_sets(&alloc_info)?;
         let descriptor_set = descriptor_sets[0];
 
         let parameters_buffer_info = vk::DescriptorBufferInfo::default()
@@ -416,13 +414,13 @@ impl TracerPipeline {
             .dst_binding(0)
             .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
             .buffer_info(std::slice::from_ref(&parameters_buffer_info))];
-        device.update_descriptor_sets(&writes, &[]);
+        bundle.device.update_descriptor_sets(&writes, &[]);
 
         Ok((descriptor_set_layout, descriptor_pool, descriptor_set))
     }
 
     unsafe fn create_pipeline(
-        device: &Device,
+        bundle: Bundle,
         descriptor_set_layout_0: vk::DescriptorSetLayout,
         descriptor_set_layout_1: vk::DescriptorSetLayout,
         shader_stage: &vk::PipelineShaderStageCreateInfo,
@@ -432,12 +430,15 @@ impl TracerPipeline {
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(&layouts)
             .push_constant_ranges(&ranges);
-        let pipline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
+        let pipline_layout = bundle
+            .device
+            .create_pipeline_layout(&pipeline_layout_info, None)?;
 
         let pipeline_info = vk::ComputePipelineCreateInfo::default()
             .stage(*shader_stage)
             .layout(pipline_layout);
-        let pipeline = device
+        let pipeline = bundle
+            .device
             .create_compute_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)
             .map_err(|(_, e)| e)?
             .remove(0);
@@ -446,7 +447,7 @@ impl TracerPipeline {
 
     unsafe fn record_command_buffer(
         &self,
-        device: &Device,
+        bundle: Bundle,
         command_buffer: &CommandBuffer,
         descriptor_set_0: vk::DescriptorSet,
         descriptor_set_1: vk::DescriptorSet,
@@ -455,12 +456,14 @@ impl TracerPipeline {
         extent: Extent2D,
         push_constants_data: PushConstantsData,
     ) -> anyhow::Result<()> {
-        command_buffer.reset(device)?;
-        command_buffer.begin(device)?;
+        command_buffer.reset(bundle)?;
+        command_buffer.begin(bundle)?;
 
         if need_timestamp {
-            device.cmd_reset_query_pool(command_buffer.as_inner(), self.query_pool, 0, 2);
-            device.cmd_write_timestamp(
+            bundle
+                .device
+                .cmd_reset_query_pool(command_buffer.as_inner(), self.query_pool, 0, 2);
+            bundle.device.cmd_write_timestamp(
                 command_buffer.as_inner(),
                 vk::PipelineStageFlags::TOP_OF_PIPE,
                 self.query_pool,
@@ -468,27 +471,31 @@ impl TracerPipeline {
             );
         }
 
-        command_buffer.bind_pipeline(device, vk::PipelineBindPoint::COMPUTE, self.pipeline);
-        command_buffer.bind_descriptor_sets(
-            device,
+        bundle.device.cmd_bind_pipeline(
+            command_buffer.as_inner(),
+            vk::PipelineBindPoint::COMPUTE,
+            self.pipeline,
+        );
+        bundle.device.cmd_bind_descriptor_sets(
+            command_buffer.as_inner(),
             vk::PipelineBindPoint::COMPUTE,
             self.pipeline_layout,
             0,
             &[descriptor_set_0, descriptor_set_1],
             &[],
         );
-        device.cmd_push_constants(
+        bundle.device.cmd_push_constants(
             command_buffer.as_inner(),
             self.pipeline_layout,
             vk::ShaderStageFlags::COMPUTE,
             0,
             std::slice::from_raw_parts(
                 (&push_constants_data as *const PushConstantsData) as *const u8,
-                std::mem::size_of::<PushConstantsData>(),
+                size_of::<PushConstantsData>(),
             ),
         );
-        command_buffer.dispatch(
-            device,
+        bundle.device.cmd_dispatch(
+            command_buffer.as_inner(),
             extent.width.div_ceil(16),
             extent.height.div_ceil(16),
             1,
@@ -511,7 +518,7 @@ impl TracerPipeline {
                     .layer_count(1),
             );
 
-        device.cmd_pipeline_barrier(
+        bundle.device.cmd_pipeline_barrier(
             command_buffer.as_inner(),
             vk::PipelineStageFlags::COMPUTE_SHADER,
             vk::PipelineStageFlags::COMPUTE_SHADER,
@@ -522,7 +529,7 @@ impl TracerPipeline {
         );
 
         if need_timestamp {
-            device.cmd_write_timestamp(
+            bundle.device.cmd_write_timestamp(
                 command_buffer.as_inner(),
                 vk::PipelineStageFlags::BOTTOM_OF_PIPE,
                 self.query_pool,
@@ -530,23 +537,23 @@ impl TracerPipeline {
             );
         }
 
-        command_buffer.end(device)?;
+        command_buffer.end(bundle)?;
 
         Ok(())
     }
 
     unsafe fn enqueue_new_frame(
         &mut self,
-        device: &Device,
+        bundle: Bundle,
         need_timestamp: bool,
         index: usize,
         push_constants_data: PushConstantsData,
     ) -> anyhow::Result<()> {
-        device.reset_fences(&[self.fences[index]])?;
+        bundle.device.reset_fences(&[self.fences[index]])?;
 
         let buffer_ptr: *mut CommandBuffer = &mut self.command_buffers[index];
         self.record_command_buffer(
-            device,
+            bundle,
             &*buffer_ptr,
             self.descriptor_sets_0[index],
             self.descriptor_set_1,
@@ -563,7 +570,7 @@ impl TracerPipeline {
         let command_buffers = vec![self.command_buffers[index].as_inner()];
 
         let submit_info = vk::SubmitInfo::default().command_buffers(&command_buffers);
-        device.queue_submit(
+        bundle.device.queue_submit(
             self.queues.compute_queue,
             &[submit_info],
             self.fences[index],
@@ -572,10 +579,10 @@ impl TracerPipeline {
         Ok(())
     }
 
-    unsafe fn fetch_render_time(&mut self, device: &Device) -> anyhow::Result<Option<f32>> {
+    unsafe fn fetch_render_time(&mut self, bundle: Bundle) -> anyhow::Result<Option<f32>> {
         let mut timestamps = vec![0u64; 2];
 
-        match device.get_query_pool_results(
+        match bundle.device.get_query_pool_results(
             self.query_pool,
             0,
             &mut timestamps,
@@ -593,28 +600,30 @@ impl TracerPipeline {
 
     pub unsafe fn present(
         &mut self,
-        device: &Device,
+        bundle: Bundle,
         parameters_data: ParametersSSBOData,
         push_constants_data: PushConstantsData,
     ) -> anyhow::Result<TracerSlot> {
         let current_frame = self.current_frame;
-        let status = device.get_fence_status(self.fences[current_frame])?;
+        let status = bundle.device.get_fence_status(self.fences[current_frame])?;
         if status {
             let mut need_timestamp = self.last_finished_frame.is_none();
-            if let Some(ms) = self.fetch_render_time(device)? {
+            if let Some(ms) = self.fetch_render_time(bundle)? {
                 self.profile.render_time = self.profile.render_time.lerp(ms, 0.01);
                 need_timestamp = true;
             }
 
             self.parameters_ssbo.update(parameters_data);
 
-            self.enqueue_new_frame(device, need_timestamp, current_frame, push_constants_data)?;
+            self.enqueue_new_frame(bundle, need_timestamp, current_frame, push_constants_data)?;
 
             // If it's the first frame, we need to wait for the first frame
             // to finish rendering before we can present it.
             if self.last_finished_frame.is_none() {
                 debug!("Waiting for first frame to finish rendering");
-                device.wait_for_fences(&[self.fences[current_frame]], true, u64::MAX)?;
+                bundle
+                    .device
+                    .wait_for_fences(&[self.fences[current_frame]], true, u64::MAX)?;
             }
 
             self.profile.fps = self.fps.update();
@@ -637,7 +646,7 @@ impl TracerPipeline {
         }
     }
 
-    pub unsafe fn resize(&mut self, device: &Device, size: glam::UVec2) -> anyhow::Result<()> {
+    pub unsafe fn resize(&mut self, bundle: Bundle, size: glam::UVec2) -> anyhow::Result<()> {
         if self.viewport != size {
             debug!(
                 "Resizing TracerPipeline from {:?} to {:?}",
@@ -645,35 +654,33 @@ impl TracerPipeline {
             );
             self.viewport = size;
 
-            device.device_wait_idle()?;
+            bundle.device.device_wait_idle()?;
 
             // Destroy existing images
             for (i, image) in self.images.iter().enumerate() {
                 if let Some(allocation) = self.image_allocations[i].take() {
-                    self.allocator
-                        .lock()
-                        .unwrap()
+                    bundle
+                        .allocator()
                         .free(allocation)
                         .expect("Failed to free image allocation");
                 }
-                device.destroy_image_view(self.image_views[i], None);
-                device.destroy_sampler(self.image_samplers[i], None);
-                device.destroy_image(*image, None);
+                bundle.device.destroy_image_view(self.image_views[i], None);
+                bundle.device.destroy_sampler(self.image_samplers[i], None);
+                bundle.device.destroy_image(*image, None);
             }
 
             // Destroy descriptor sets
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout_0, None);
-            device.destroy_descriptor_pool(self.descriptor_pool_0, None);
+            bundle
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout_0, None);
+            bundle
+                .device
+                .destroy_descriptor_pool(self.descriptor_pool_0, None);
 
             // Create new images
-            let (images, image_views, image_samplers, image_allocations) = Self::create_images(
-                &mut self.allocator.lock().unwrap(),
-                device,
-                &self.queues,
-                self.command_pool,
-                self.viewport,
-            )
-            .context("Failed to create images")?;
+            let (images, image_views, image_samplers, image_allocations) =
+                Self::create_images(bundle, &self.queues, self.command_pool, self.viewport)
+                    .context("Failed to create images")?;
 
             self.images = images;
             self.image_views = image_views;
@@ -682,7 +689,7 @@ impl TracerPipeline {
 
             // Create new descriptor sets
             let (descriptor_set_layout_0, descriptor_pool_0, descriptor_sets_0) =
-                Self::create_descriptor_set_0(device, &self.image_views)
+                Self::create_descriptor_set_0(bundle, &self.image_views)
                     .context("Failed to create descriptor set layout")?;
             self.descriptor_set_layout_0 = descriptor_set_layout_0;
             self.descriptor_pool_0 = descriptor_pool_0;
@@ -692,57 +699,65 @@ impl TracerPipeline {
         Ok(())
     }
 
-    pub unsafe fn destroy(&mut self, device: &Device) {
+    pub unsafe fn destroy(&mut self, bundle: Bundle) {
         if !self.destroyed {
             debug!("Waiting for device to be idle before destroying runtime");
-            device.device_wait_idle().unwrap();
+            bundle.device.device_wait_idle().unwrap();
 
             debug!("Destroying fences");
             for fence in &self.fences {
-                device.destroy_fence(*fence, None);
+                bundle.device.destroy_fence(*fence, None);
             }
 
             debug!("Destroying command pool");
             for cmd_buf in &mut self.command_buffers {
-                cmd_buf.destroy(self.command_pool, device);
+                cmd_buf.destroy(bundle, self.command_pool);
             }
-            device.destroy_command_pool(self.command_pool, None);
+            bundle.device.destroy_command_pool(self.command_pool, None);
 
             debug!("Destroying pipeline");
-            device.destroy_pipeline(self.pipeline, None);
+            bundle.device.destroy_pipeline(self.pipeline, None);
 
             debug!("Destroying pipeline layout");
-            device.destroy_pipeline_layout(self.pipeline_layout, None);
+            bundle
+                .device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
 
             debug!("Destroying compute shader");
-            self.compute_shader.destroy(device);
+            self.compute_shader.destroy(bundle);
 
             debug!("Destroying images");
             for (i, image) in self.images.iter().enumerate() {
                 if let Some(allocation) = self.image_allocations[i].take() {
-                    self.allocator
-                        .lock()
-                        .unwrap()
+                    bundle
+                        .allocator()
                         .free(allocation)
                         .expect("Failed to free image allocation");
                 }
-                device.destroy_image_view(self.image_views[i], None);
-                device.destroy_sampler(self.image_samplers[i], None);
-                device.destroy_image(*image, None);
+                bundle.device.destroy_image_view(self.image_views[i], None);
+                bundle.device.destroy_sampler(self.image_samplers[i], None);
+                bundle.device.destroy_image(*image, None);
             }
 
             debug!("Destroying SSBO");
-            self.parameters_ssbo
-                .destroy(device, &mut self.allocator.lock().unwrap());
+            self.parameters_ssbo.destroy(bundle);
 
             debug!("Destroying descriptor set layout");
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout_0, None);
-            device.destroy_descriptor_pool(self.descriptor_pool_0, None);
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout_1, None);
-            device.destroy_descriptor_pool(self.descriptor_pool_1, None);
+            bundle
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout_0, None);
+            bundle
+                .device
+                .destroy_descriptor_pool(self.descriptor_pool_0, None);
+            bundle
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout_1, None);
+            bundle
+                .device
+                .destroy_descriptor_pool(self.descriptor_pool_1, None);
 
             debug!("Destroying query pool");
-            device.destroy_query_pool(self.query_pool, None);
+            bundle.device.destroy_query_pool(self.query_pool, None);
 
             self.destroyed = true;
         } else {

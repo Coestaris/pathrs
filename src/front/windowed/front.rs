@@ -5,6 +5,7 @@ use crate::common::queue::QueueFamily;
 use crate::front::windowed::pipeline::PresentationPipeline;
 use crate::front::windowed::ui::UICompositor;
 use crate::front::{Front, QueueFamilyIndices};
+use crate::tracer::Bundle;
 use anyhow::Context;
 use ash::{vk, Device};
 use gpu_allocator::vulkan::Allocator;
@@ -316,23 +317,15 @@ impl Front for TracerWindowedFront {
 
     unsafe fn init(
         &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
-        physical_device: vk::PhysicalDevice,
+        bundle: Bundle,
         queues: WindowedQueues,
-        allocator: Arc<Mutex<Allocator>>,
     ) -> anyhow::Result<()> {
         self.runtime = Some(
             PresentationPipeline::new(
-                allocator,
+                bundle,
                 self.asset_manager.clone(),
                 self.viewport,
-                entry,
-                instance,
-                device,
                 self.surface,
-                physical_device,
                 queues,
                 self.ui.clone(),
             )
@@ -341,15 +334,15 @@ impl Front for TracerWindowedFront {
         Ok(())
     }
 
-    unsafe fn destroy(&mut self, entry: &ash::Entry, instance: &ash::Instance, device: &Device) {
+    unsafe fn destroy(&mut self, bundle: Bundle) {
         if !self.destroyed {
             if let Some(mut runtime) = self.runtime.take() {
                 debug!("Destroying windowed runtime");
-                runtime.destroy(instance, device);
+                runtime.destroy(bundle);
             }
 
             debug!("Destroying windowed surface");
-            let surface = ash::khr::surface::Instance::new(entry, instance);
+            let surface = ash::khr::surface::Instance::new(bundle.entry, bundle.instance);
             surface.destroy_surface(self.surface, None);
             self.destroyed = true;
         } else {
@@ -357,17 +350,10 @@ impl Front for TracerWindowedFront {
         }
     }
 
-    unsafe fn resize(
-        &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
-        physical_device: vk::PhysicalDevice,
-        size: glam::UVec2,
-    ) -> anyhow::Result<()> {
+    unsafe fn resize(&mut self, bundle: Bundle, size: glam::UVec2) -> anyhow::Result<()> {
         if let Some(runtime) = &mut self.runtime {
             runtime
-                .resize(entry, instance, device, self.surface, physical_device, size)
+                .resize(bundle, self.surface, size)
                 .context("Failed to resize windowed runtime")
         } else {
             Ok(())
@@ -376,24 +362,13 @@ impl Front for TracerWindowedFront {
 
     unsafe fn present(
         &mut self,
+        bundle: Bundle,
         w: Option<&winit::window::Window>,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
-        physical_device: vk::PhysicalDevice,
         tracer_slot: TracerSlot,
     ) -> anyhow::Result<()> {
         if let Some(runtime) = &mut self.runtime {
             runtime
-                .present(
-                    w.unwrap(),
-                    entry,
-                    instance,
-                    device,
-                    self.surface,
-                    physical_device,
-                    tracer_slot,
-                )
+                .present(bundle, w.unwrap(), self.surface, tracer_slot)
                 .context("Failed to present windowed runtime")
         } else {
             Ok(())

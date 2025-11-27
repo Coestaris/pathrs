@@ -1,10 +1,13 @@
 use crate::back::TracerSlot;
+use crate::common::capabilities::DeviceCapabilities;
 use crate::common::queue::QueueFamily;
 use crate::front::headless::TracerHeadlessOutput;
 use crate::front::{Front, QueueFamilyIndices};
+use crate::tracer::Bundle;
 use ash::vk::PhysicalDevice;
 use ash::{Device, Entry, Instance};
 use log::info;
+use std::ffi::{c_char, CStr};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -45,6 +48,22 @@ impl TracerHeadlessFront {
 impl Front for TracerHeadlessFront {
     type FrontQueueFamilyIndices = HeadlessQueueFamilyIndices;
 
+    unsafe fn get_required_device_extensions(
+        &self,
+        available: &Vec<String>,
+        capabilities: &mut DeviceCapabilities,
+    ) -> anyhow::Result<Vec<*const c_char>> {
+        const VK_EXT_HOST_IMAGE_COPY_NAME: &CStr = c"VK_EXT_host_image_copy";
+        let mut required = vec![];
+        if available.contains(&VK_EXT_HOST_IMAGE_COPY_NAME.to_str()?.to_string()) {
+            capabilities.host_image_copy = true;
+            info!("Image copy extension required");
+            required.push(VK_EXT_HOST_IMAGE_COPY_NAME.as_ptr() as *const c_char);
+        }
+
+        Ok(required)
+    }
+
     unsafe fn find_queue_families(
         &self,
         _entry: &Entry,
@@ -56,11 +75,8 @@ impl Front for TracerHeadlessFront {
 
     unsafe fn present(
         &mut self,
+        _bundle: Bundle,
         _w: Option<&winit::window::Window>,
-        _entry: &Entry,
-        _instance: &Instance,
-        _device: &Device,
-        _physical_device: PhysicalDevice,
         _slot: TracerSlot,
     ) -> anyhow::Result<()> {
         info!("Presenting frame");

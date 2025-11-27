@@ -1,6 +1,7 @@
 use crate::back::TracerSlot;
 use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
+use crate::tracer::Bundle;
 use ash::{vk, Device};
 use gpu_allocator::vulkan::Allocator;
 use std::ffi::c_char;
@@ -71,37 +72,22 @@ pub trait Front {
 
     unsafe fn init(
         &mut self,
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
-        _device: &Device,
-        _physical_device: vk::PhysicalDevice,
+        _bundle: Bundle,
         _queues: <<Self as Front>::FrontQueueFamilyIndices as QueueFamilyIndices>::Queues,
-        _allocator: Arc<Mutex<Allocator>>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    unsafe fn destroy(&mut self, _entry: &ash::Entry, _instance: &ash::Instance, _device: &Device) {
-    }
+    unsafe fn destroy(&mut self, _bundle: Bundle) {}
 
-    unsafe fn resize(
-        &mut self,
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
-        _device: &Device,
-        _physical_device: vk::PhysicalDevice,
-        _size: glam::UVec2,
-    ) -> anyhow::Result<()> {
+    unsafe fn resize(&mut self, _bundle: Bundle, _size: glam::UVec2) -> anyhow::Result<()> {
         Ok(())
     }
 
     unsafe fn present(
         &mut self,
+        _bundle: Bundle,
         _w: Option<&winit::window::Window>, // ???
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
-        _device: &Device,
-        _physical_device: vk::PhysicalDevice,
         _tracer_slot: TracerSlot,
     ) -> anyhow::Result<()> {
         Ok(())

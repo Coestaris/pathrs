@@ -1,9 +1,11 @@
 #[allow(dead_code)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct InstanceCapabilities {
     pub debug_utils_ext: bool,
     pub validation_layer: bool,
 }
 
-#[derive(Default)]
-pub struct DeviceCapabilities {}
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DeviceCapabilities {
+    pub host_image_copy: bool,
+}

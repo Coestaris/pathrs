@@ -1,5 +1,6 @@
 use crate::common::buffer::create_device_local_buffer_with_data;
 use crate::common::command_buffer::CommandBuffer;
+use crate::tracer::Bundle;
 use ash::{vk, Device};
 use gpu_allocator::vulkan::{Allocation, Allocator};
 use std::mem::offset_of;
@@ -62,14 +63,12 @@ pub struct QuadBuffer {
 
 impl QuadBuffer {
     pub unsafe fn new(
-        device: &Device,
-        allocator: &mut Allocator,
+        bundle: Bundle,
         command_pool: vk::CommandPool,
         queue: vk::Queue,
     ) -> anyhow::Result<Self> {
         let (vertex_buffer, vertex_alloc) = create_device_local_buffer_with_data(
-            device,
-            allocator,
+            bundle,
             command_pool,
             queue,
             vk::BufferUsageFlags::VERTEX_BUFFER,
@@ -78,8 +77,7 @@ impl QuadBuffer {
         )?;
 
         let (index_buffer, index_alloc) = create_device_local_buffer_with_data(
-            device,
-            allocator,
+            bundle,
             command_pool,
             queue,
             vk::BufferUsageFlags::INDEX_BUFFER,
@@ -96,31 +94,51 @@ impl QuadBuffer {
         })
     }
 
-    pub unsafe fn destroy(&mut self, device: &Device, allocator: &mut Allocator) {
+    pub unsafe fn destroy(&mut self, bundle: Bundle) {
         if self.destroyed {
             return;
         }
 
         if let Some(allocation) = self.vertex_buffer_allocation.take() {
-            allocator
+            bundle
+                .allocator()
                 .free(allocation)
                 .expect("Failed to free vertex buffer allocation");
         }
-        device.destroy_buffer(self.vertex_buffer, None);
+        bundle.device.destroy_buffer(self.vertex_buffer, None);
 
         if let Some(allocation) = self.index_buffer_allocation.take() {
-            allocator
+            bundle
+                .allocator()
                 .free(allocation)
                 .expect("Failed to free index buffer allocation");
         }
-        device.destroy_buffer(self.index_buffer, None);
+        bundle.device.destroy_buffer(self.index_buffer, None);
         self.destroyed = true;
     }
 
-    pub unsafe fn draw(&self, device: &Device, command_buffer: &CommandBuffer) {
-        command_buffer.bind_vertex_buffer(device, 0, self.vertex_buffer, 0);
-        command_buffer.bind_index_buffer(device, self.index_buffer, 0, vk::IndexType::UINT16);
-        command_buffer.draw_indexed(device, 6, 1, 0, 0, 0);
+    pub unsafe fn draw(&self, bundle: Bundle, command_buffer: &CommandBuffer) {
+        bundle.device.cmd_bind_vertex_buffers(
+            command_buffer.as_inner(),
+            0,
+            &[self.vertex_buffer],
+            &[0],
+        );
+        bundle.device.cmd_bind_index_buffer(
+            command_buffer.as_inner(),
+            self.index_buffer,
+            0,
+            vk::IndexType::UINT16,
+        );
+        bundle.device.cmd_bind_index_buffer(
+            command_buffer.as_inner(),
+            self.index_buffer,
+            0,
+            vk::IndexType::UINT16,
+        );
+        bundle
+            .device
+            .cmd_draw_indexed(command_buffer.as_inner(), 6, 1, 0, 0, 0);
     }
 }
 

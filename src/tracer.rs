@@ -7,7 +7,7 @@ use crate::fps::FPSResult;
 use crate::front::{Front, QueueFamilyIndices};
 use anyhow::Context;
 use ash::vk::{DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceFeatures};
-use ash::{vk, Entry, Instance};
+use ash::{vk, Device, Entry, Instance};
 use build_info::BuildInfo;
 use glam::UVec2;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
@@ -24,6 +24,23 @@ pub struct TracerProfile {
 pub struct DebugMessenger {
     handle: vk::DebugUtilsMessengerEXT,
     destroyed: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct Bundle<'a> {
+    pub entry: &'a Entry,
+    pub instance: &'a Instance,
+    pub device: &'a Device,
+    pub physical_device: PhysicalDevice,
+    pub device_capabilities: &'a DeviceCapabilities,
+    pub instance_capabilities: &'a InstanceCapabilities,
+    pub allocator: &'a Arc<Mutex<Allocator>>,
+}
+
+impl<'a> Bundle<'a> {
+    pub(crate) fn allocator(&self) -> std::sync::MutexGuard<'a, Allocator> {
+        self.allocator.lock().unwrap()
+    }
 }
 
 #[allow(dead_code)]
@@ -155,15 +172,18 @@ unsafe fn is_subset(available: &[String], required: &Vec<*const c_char>) -> anyh
 pub struct Tracer<F: Front> {
     viewport: UVec2,
 
-    pub front: Option<F>,
-    pub back: Option<Back>,
+    front: Option<F>,
+    back: Option<Back>,
 
-    pub entry: Entry,
-    pub instance: Instance,
-    pub debug_messenger: Option<DebugMessenger>,
-    pub physical_device: PhysicalDevice,
-    pub logical_device: ash::Device,
-    pub allocator: Option<Arc<Mutex<Allocator>>>,
+    entry: Entry,
+    instance: Instance,
+    debug_messenger: Option<DebugMessenger>,
+    physical_device: PhysicalDevice,
+    logical_device: ash::Device,
+    allocator: Option<Arc<Mutex<Allocator>>>,
+
+    device_capabilities: DeviceCapabilities,
+    instance_capabilities: InstanceCapabilities,
 }
 
 impl<F: Front> Tracer<F> {
@@ -384,6 +404,7 @@ impl<F: Front> Tracer<F> {
         instance: &Instance,
         front: &mut F,
     ) -> anyhow::Result<(
+        DeviceCapabilities,
         Arc<Mutex<Allocator>>,
         BackQueues,
         <<F as Front>::FrontQueueFamilyIndices as QueueFamilyIndices>::Queues,
@@ -459,6 +480,7 @@ impl<F: Front> Tracer<F> {
             Self::new_allocator(instance.clone(), logical_device.clone(), physical_device)?;
 
         Ok((
+            capabilities,
             allocator,
             back_queues,
             front_queues,
@@ -478,14 +500,14 @@ impl<F: Front> Tracer<F> {
         let entry = Self::new_entry()?;
 
         info!("Created Vulkan entry");
-        let (instance, _instance_capabilities) = Self::new_instance(&entry, bi)?;
+        let (instance, instance_capabilities) = Self::new_instance(&entry, bi)?;
 
         info!("Created Front");
         let mut front =
             constructor(&entry, &instance).context("Failed to create tracer front-end")?;
 
         #[cfg(debug_assertions)]
-        let debug_messenger = if DebugMessenger::available(&_instance_capabilities) {
+        let debug_messenger = if DebugMessenger::available(&instance_capabilities) {
             info!("Setting up debug messanger");
             Some(
                 DebugMessenger::new(&entry, &instance)
@@ -499,31 +521,31 @@ impl<F: Front> Tracer<F> {
         let debug_messenger = None;
 
         info!("Creating logical device");
-        let (allocator, back_queues, front_queues, physical_device, logical_device) =
-            Tracer::<D>::new_device(&entry, &instance, &mut front)?;
+        let (
+            device_capabilities,
+            allocator,
+            back_queues,
+            front_queues,
+            physical_device,
+            logical_device,
+        ) = Tracer::<D>::new_device(&entry, &instance, &mut front)?;
+
+        let bundle = Bundle {
+            entry: &entry,
+            instance: &instance,
+            device: &logical_device,
+            physical_device,
+            device_capabilities: &device_capabilities,
+            instance_capabilities: &instance_capabilities,
+            allocator: &allocator,
+        };
 
         info!("Initializing back-end");
-        let back = Back::new(
-            allocator.clone(),
-            asset_manager.clone(),
-            viewport,
-            &instance,
-            physical_device,
-            &logical_device,
-            back_queues,
-            config,
-        )
-        .context("Failed to create tracer pipeline")?;
+        let back = Back::new(bundle, asset_manager.clone(), viewport, back_queues, config)
+            .context("Failed to create tracer pipeline")?;
 
         info!("Initializing front-end");
-        front.init(
-            &entry,
-            &instance,
-            &logical_device,
-            physical_device,
-            front_queues,
-            allocator.clone(),
-        )?;
+        front.init(bundle, front_queues)?;
 
         Ok(Tracer {
             viewport,
@@ -535,52 +557,63 @@ impl<F: Front> Tracer<F> {
             physical_device,
             logical_device,
             allocator: Some(allocator),
+            device_capabilities,
+            instance_capabilities,
         })
     }
 
     pub unsafe fn trace(&mut self, w: Option<&winit::window::Window>) -> anyhow::Result<()> {
+        let allocator = self.allocator.as_mut().unwrap();
+        let bundle = Bundle {
+            entry: &self.entry,
+            instance: &self.instance,
+            device: &self.logical_device,
+            physical_device: self.physical_device,
+            device_capabilities: &self.device_capabilities,
+            instance_capabilities: &self.instance_capabilities,
+            allocator,
+        };
+
         let slot = self
             .back
             .as_mut()
             .unwrap()
-            .present(&self.logical_device)
+            .present(bundle)
             .context("Failed to present tracer back-end")?;
 
         self.front
             .as_mut()
             .unwrap()
-            .present(
-                w,
-                &self.entry,
-                &self.instance,
-                &self.logical_device,
-                self.physical_device,
-                slot,
-            )
+            .present(bundle, w, slot)
             .context("Failed to present tracer front")?;
 
         Ok(())
     }
 
     pub unsafe fn resize(&mut self, size: UVec2) -> anyhow::Result<()> {
+        let allocator = self.allocator.as_mut().unwrap();
+        let bundle = Bundle {
+            entry: &self.entry,
+            instance: &self.instance,
+            device: &self.logical_device,
+            physical_device: self.physical_device,
+            device_capabilities: &self.device_capabilities,
+            instance_capabilities: &self.instance_capabilities,
+            allocator,
+        };
+
         self.viewport = size;
 
         self.back
             .as_mut()
             .unwrap()
-            .resize(&self.logical_device, size)
+            .resize(bundle, size)
             .with_context(|| format!("Failed to resize tracer back-end to {:?}", size))?;
 
         self.front
             .as_mut()
             .unwrap()
-            .resize(
-                &self.entry,
-                &self.instance,
-                &self.logical_device,
-                self.physical_device,
-                size,
-            )
+            .resize(bundle, size)
             .with_context(|| format!("Failed to resize tracer front to {:?}", size))?;
 
         Ok(())
@@ -594,14 +627,25 @@ impl<F: Front> Tracer<F> {
 impl<F: Front> Drop for Tracer<F> {
     fn drop(&mut self) {
         unsafe {
+            let allocator = self.allocator.as_mut().unwrap();
+            let bundle = Bundle {
+                entry: &self.entry,
+                instance: &self.instance,
+                device: &self.logical_device,
+                physical_device: self.physical_device,
+                device_capabilities: &self.device_capabilities,
+                instance_capabilities: &self.instance_capabilities,
+                allocator,
+            };
+
             if let Some(mut back) = self.back.take() {
                 debug!("Destroying back-end");
-                back.destroy(&self.logical_device);
+                back.destroy(bundle);
             }
 
             if let Some(mut front) = self.front.take() {
                 debug!("Destroying front-end");
-                front.destroy(&self.entry, &self.instance, &self.logical_device);
+                front.destroy(bundle);
             }
 
             debug!("Destroying allocator");

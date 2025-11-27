@@ -1,3 +1,4 @@
+use crate::tracer::Bundle;
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
@@ -36,22 +37,24 @@ pub struct ParametersSSBO {
 }
 
 impl ParametersSSBO {
-    pub unsafe fn new(device: &ash::Device, allocator: &mut Allocator) -> anyhow::Result<Self> {
+    pub unsafe fn new(bundle: Bundle) -> anyhow::Result<Self> {
         let buffer_create_info = vk::BufferCreateInfo::default()
             .size(size_of::<ParametersSSBOData>() as vk::DeviceSize)
             .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
-        let buffer = device.create_buffer(&buffer_create_info, None)?;
-        let reqs = device.get_buffer_memory_requirements(buffer);
+        let buffer = bundle.device.create_buffer(&buffer_create_info, None)?;
+        let reqs = bundle.device.get_buffer_memory_requirements(buffer);
 
-        let allocation = allocator.allocate(&AllocationCreateDesc {
+        let allocation = bundle.allocator().allocate(&AllocationCreateDesc {
             name: "Parameters SSBO Buffer",
             requirements: reqs,
             location: MemoryLocation::CpuToGpu,
             linear: true,
             allocation_scheme: AllocationScheme::GpuAllocatorManaged,
         })?;
-        device.bind_buffer_memory(buffer, allocation.memory(), allocation.offset())?;
+        bundle
+            .device
+            .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())?;
 
         Ok(Self {
             data: ParametersSSBOData::default(),
@@ -61,12 +64,12 @@ impl ParametersSSBO {
         })
     }
 
-    pub unsafe fn destroy(&mut self, device: &ash::Device, allocator: &mut Allocator) {
+    pub unsafe fn destroy(&mut self, bundle: Bundle) {
         if !self.destroyed {
             if let Some(allocation) = self.allocation.take() {
-                allocator.free(allocation).unwrap();
+                bundle.allocator().free(allocation).unwrap();
             }
-            device.destroy_buffer(self.buffer, None);
+            bundle.device.destroy_buffer(self.buffer, None);
 
             self.destroyed = true;
         }

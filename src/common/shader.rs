@@ -1,3 +1,4 @@
+use crate::tracer::Bundle;
 use ash::vk;
 use log::warn;
 
@@ -7,7 +8,7 @@ pub struct Shader {
 }
 
 impl Shader {
-    pub unsafe fn new_from_spirv(device: &ash::Device, source: &[u8]) -> anyhow::Result<Shader> {
+    pub unsafe fn new_from_spirv(bundle: Bundle, source: &[u8]) -> anyhow::Result<Shader> {
         // Make sure that source is padded to 4 bytes
         assert_eq!(source.len() % 4, 0);
         let create_info = vk::ShaderModuleCreateInfo::default().code(std::slice::from_raw_parts(
@@ -15,16 +16,16 @@ impl Shader {
             source.len() / 4,
         ));
 
-        let module = device.create_shader_module(&create_info, None)?;
+        let module = bundle.device.create_shader_module(&create_info, None)?;
         Ok(Shader {
             module,
             destroyed: false,
         })
     }
 
-    pub unsafe fn destroy(&mut self, device: &ash::Device) {
+    pub unsafe fn destroy(&mut self, bundle: Bundle) {
         if !self.destroyed {
-            device.destroy_shader_module(self.module, None);
+            bundle.device.destroy_shader_module(self.module, None);
             self.destroyed = true;
         } else {
             warn!("Shader already destroyed");

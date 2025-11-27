@@ -10,12 +10,9 @@ use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
 use crate::config::TracerConfig;
 use crate::front::QueueFamilyIndices;
-use crate::tracer::TracerProfile;
-use ash::vk::PhysicalDevice;
-use ash::{vk, Device};
-use gpu_allocator::vulkan::Allocator;
+use crate::tracer::{Bundle, TracerProfile};
+use ash::{vk, Device, Entry, Instance};
 use std::ffi::c_char;
-use std::sync::{Arc, Mutex};
 
 #[allow(dead_code)]
 pub struct TracerSlot {
@@ -98,20 +95,20 @@ impl Back {
     }
 
     pub unsafe fn is_device_suitable(
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
+        _entry: &Entry,
+        _instance: &Instance,
         _physical_device: vk::PhysicalDevice,
     ) -> anyhow::Result<bool> {
         Ok(true)
     }
 
     pub unsafe fn patch_create_device_info(
-        _entry: &ash::Entry,
-        _instance: &ash::Instance,
+        _entry: &Entry,
+        _instance: &Instance,
         _physical_device: vk::PhysicalDevice,
         create_info: vk::DeviceCreateInfo,
-        on_patched: &mut impl FnMut(vk::DeviceCreateInfo) -> anyhow::Result<ash::Device>,
-    ) -> anyhow::Result<ash::Device> {
+        on_patched: &mut impl FnMut(vk::DeviceCreateInfo) -> anyhow::Result<Device>,
+    ) -> anyhow::Result<Device> {
         let mut device_address_info =
             vk::PhysicalDeviceBufferDeviceAddressFeatures::default().buffer_device_address(true);
         let mut host_query_reset_info =
@@ -123,8 +120,8 @@ impl Back {
     }
 
     pub unsafe fn find_queue_families(
-        _entry: &ash::Entry,
-        instance: &ash::Instance,
+        _entry: &Entry,
+        instance: &Instance,
         device: vk::PhysicalDevice,
     ) -> anyhow::Result<BackQueueFamilyIndices> {
         let mut graphics_queue_index = None;
@@ -154,24 +151,13 @@ impl Back {
     }
 
     pub unsafe fn new(
-        allocator: Arc<Mutex<Allocator>>,
+        bundle: Bundle,
         asset_manager: AssetManager,
         viewport: glam::UVec2,
-        instance: &ash::Instance,
-        physical_device: PhysicalDevice,
-        device: &Device,
         queues: BackQueues,
         config: TracerConfig,
     ) -> anyhow::Result<Self> {
-        let pipeline = TracerPipeline::new(
-            allocator,
-            asset_manager,
-            viewport,
-            instance,
-            physical_device,
-            device,
-            queues,
-        )?;
+        let pipeline = TracerPipeline::new(bundle, asset_manager, viewport, queues)?;
 
         Ok(Self {
             pipeline,
@@ -180,22 +166,22 @@ impl Back {
         })
     }
 
-    pub unsafe fn present(&mut self, device: &Device) -> anyhow::Result<TracerSlot> {
+    pub unsafe fn present(&mut self, bundle: Bundle) -> anyhow::Result<TracerSlot> {
         self.time += 1.0 / 60.0; // For debugging purposes, assume its always 60 fps
 
         let push_constants = PushConstantsData::new(self.time);
         let config = self.config.0.borrow();
         let parameters = ParametersSSBOData::new(config.slider);
 
-        self.pipeline.present(device, parameters, push_constants)
+        self.pipeline.present(bundle, parameters, push_constants)
     }
 
-    pub unsafe fn destroy(&mut self, device: &Device) {
-        self.pipeline.destroy(device);
+    pub unsafe fn destroy(&mut self, bundle: Bundle) {
+        self.pipeline.destroy(bundle);
     }
 
-    pub unsafe fn resize(&mut self, device: &Device, size: glam::UVec2) -> anyhow::Result<()> {
-        self.pipeline.resize(device, size)
+    pub unsafe fn resize(&mut self, bundle: Bundle, size: glam::UVec2) -> anyhow::Result<()> {
+        self.pipeline.resize(bundle, size)
     }
 
     pub fn get_profile(&self) -> TracerProfile {

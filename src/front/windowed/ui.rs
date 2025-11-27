@@ -1,5 +1,5 @@
 use crate::config::TracerConfig;
-use crate::tracer::TracerProfile;
+use crate::tracer::{Bundle, TracerProfile};
 use gpu_allocator::vulkan::AllocatorVisualizer;
 
 pub struct UICompositor {
@@ -45,11 +45,7 @@ impl UICompositor {
         self.tracer_profile = Some(profile);
     }
 
-    pub(crate) fn render(
-        &mut self,
-        ctx: &egui::Context,
-        allocator: &mut gpu_allocator::vulkan::Allocator,
-    ) {
+    pub(crate) fn render(&mut self, bundle: Bundle, ctx: &egui::Context) {
         egui::SidePanel::left("side_panel")
             .resizable(true)
             .show(ctx, |ui| {
@@ -70,7 +66,8 @@ impl UICompositor {
                 });
 
                 ui.collapsing("Allocator Breakdown", |ui| {
-                    self.allocator_visualizer.render_breakdown_ui(ui, allocator);
+                    self.allocator_visualizer
+                        .render_breakdown_ui(ui, &bundle.allocator());
                 });
             });
     }

@@ -5,6 +5,7 @@ use crate::common::shader::Shader;
 use crate::front::windowed::front::WindowedQueues;
 use crate::front::windowed::quad::{QuadBuffer, QuadVertex};
 use crate::front::windowed::ui::UICompositor;
+use crate::tracer::Bundle;
 use anyhow::Context;
 use ash::{vk, Device};
 use egui::{FullOutput, TextureId};
@@ -24,7 +25,6 @@ const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct PresentationPipeline {
     queues: WindowedQueues,
-    allocator: Arc<Mutex<Allocator>>,
     viewport: glam::UVec2,
     destroyed: bool,
 
@@ -62,47 +62,35 @@ pub struct PresentationPipeline {
 
 impl PresentationPipeline {
     pub(crate) unsafe fn new(
-        allocator: Arc<Mutex<Allocator>>,
+        bundle: Bundle,
         asset_manager: AssetManager,
         viewport: glam::UVec2,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
         surface: vk::SurfaceKHR,
-        physical_device: vk::PhysicalDevice,
         queues: WindowedQueues,
         ui: Rc<RefCell<UICompositor>>,
     ) -> anyhow::Result<Self> {
         debug!("Creating swapchain");
-        let (swapchain, images, format, extent) = Self::create_swapchain(
-            viewport,
-            entry,
-            instance,
-            device,
-            surface,
-            physical_device,
-            &queues,
-            None,
-        )?;
+        let (swapchain, images, format, extent) =
+            Self::create_swapchain(bundle, viewport, surface, &queues, None)?;
 
         debug!("Creating image views");
-        let image_views = Self::create_image_views(device, &images, format)?;
+        let image_views = Self::create_image_views(bundle, &images, format)?;
 
         debug!("Creating shaders");
         let vert_shader = asset_manager
             .load_asset(VERTEX_ASSET)
             .context("Failed to load vertex shader asset")?;
-        let vert_shader = Shader::new_from_spirv(device, vert_shader.get_spirv()?)
+        let vert_shader = Shader::new_from_spirv(bundle, vert_shader.get_spirv()?)
             .context("Failed to create vertex shader")?;
         let frag_shader = asset_manager
             .load_asset(FRAGMENT_ASSET)
             .context("Failed to load fragment shader asset")?;
-        let frag_shader = Shader::new_from_spirv(device, frag_shader.get_spirv()?)
+        let frag_shader = Shader::new_from_spirv(bundle, frag_shader.get_spirv()?)
             .context("Failed to create fragment shader")?;
 
         debug!("Creating pipeline layout and render pass");
         let render_pass =
-            Self::create_render_pass(device, format).context("Failed to create render pass")?;
+            Self::create_render_pass(bundle, format).context("Failed to create render pass")?;
 
         let stages = vec![
             vk::PipelineShaderStageCreateInfo::default()
@@ -115,26 +103,21 @@ impl PresentationPipeline {
                 .name(c"main"),
         ];
         let (descriptor_set_layout, pipeline_layout, pipeline) =
-            Self::create_pipeline(device, extent, render_pass, &stages)
+            Self::create_pipeline(bundle, extent, render_pass, &stages)
                 .context("Failed to create pipeline")?;
 
         debug!("Creating framebuffers");
         let swapchain_framebuffers =
-            Self::create_framebuffers(&image_views, render_pass, extent, device)
+            Self::create_framebuffers(bundle, &image_views, render_pass, extent)
                 .context("Failed to create framebuffers")?;
 
         debug!("Creating command pool and buffers");
-        let (command_pool, command_buffers) = Self::create_command_buffers(device, &queues)
+        let (command_pool, command_buffers) = Self::create_command_buffers(bundle, &queues)
             .context("Failed to create command buffer")?;
 
         debug!("Creating quad buffers");
-        let quad_buffer = QuadBuffer::new(
-            device,
-            &mut allocator.lock().unwrap(),
-            command_pool,
-            queues.graphics_queue,
-        )
-        .context("Failed to create quad buffers")?;
+        let quad_buffer = QuadBuffer::new(bundle, command_pool, queues.graphics_queue)
+            .context("Failed to create quad buffers")?;
 
         debug!("Creating synchronization objects");
         let (
@@ -142,11 +125,11 @@ impl PresentationPipeline {
             render_finished_semaphores,
             in_flight_fences,
             images_in_flight,
-        ) = Self::create_sync_objects(device, images.len())
+        ) = Self::create_sync_objects(bundle, images.len())
             .context("Failed to create synchronization objects")?;
 
         Ok(PresentationPipeline {
-            swapchain_loader: ash::khr::swapchain::Device::new(instance, device),
+            swapchain_loader: ash::khr::swapchain::Device::new(bundle.instance, bundle.device),
 
             queues,
             swapchain,
@@ -177,8 +160,8 @@ impl PresentationPipeline {
 
             destroyed: false,
             ui_renderer: egui_ash_renderer::Renderer::with_gpu_allocator(
-                allocator.clone(),
-                device.clone(),
+                bundle.allocator.clone(),
+                bundle.device.clone(),
                 render_pass,
                 egui_ash_renderer::Options {
                     in_flight_frames: MAX_FRAMES_IN_FLIGHT,
@@ -187,87 +170,89 @@ impl PresentationPipeline {
             )?,
             ui,
             textures_to_free: None,
-            allocator,
             viewport,
         })
     }
 
-    pub unsafe fn swapchain_cleanup(&mut self, device: &Device) {
-        device.device_wait_idle().unwrap();
+    pub unsafe fn swapchain_cleanup(&mut self, bundle: Bundle) {
+        bundle.device.device_wait_idle().unwrap();
 
         for fb in &self.swapchain_framebuffers {
-            device.destroy_framebuffer(*fb, None);
+            bundle.device.destroy_framebuffer(*fb, None);
         }
         self.swapchain_framebuffers.clear();
 
         for view in &self.chain_image_views {
-            device.destroy_image_view(*view, None);
+            bundle.device.destroy_image_view(*view, None);
         }
         self.chain_image_views.clear();
 
         for s in &self.render_finished_semaphores {
-            device.destroy_semaphore(*s, None);
+            bundle.device.destroy_semaphore(*s, None);
         }
         self.render_finished_semaphores.clear();
         self.images_in_flight.clear();
     }
 
-    pub unsafe fn destroy(&mut self, instance: &ash::Instance, device: &Device) {
+    pub unsafe fn destroy(&mut self, bundle: Bundle) {
         if !self.destroyed {
             // Wait for all in-flight frames to finish
             debug!("Waiting for device to be idle before destroying runtime");
-            device.device_wait_idle().unwrap();
+            bundle.device.device_wait_idle().unwrap();
 
             debug!("Destroying synchronization objects");
             for semaphore in &self.image_available_semaphores {
-                device.destroy_semaphore(*semaphore, None);
+                bundle.device.destroy_semaphore(*semaphore, None);
             }
             for semaphore in &self.render_finished_semaphores {
-                device.destroy_semaphore(*semaphore, None);
+                bundle.device.destroy_semaphore(*semaphore, None);
             }
             for fence in &self.in_flight_fences {
-                device.destroy_fence(*fence, None);
+                bundle.device.destroy_fence(*fence, None);
             }
 
             debug!("Destroying command pool and buffers");
             for cmd_buf in &mut self.command_buffers {
-                cmd_buf.destroy(self.command_pool, device);
+                cmd_buf.destroy(bundle, self.command_pool);
             }
-            device.destroy_command_pool(self.command_pool, None);
+            bundle.device.destroy_command_pool(self.command_pool, None);
 
             debug!("Destroying buffers");
-            self.quad
-                .destroy(device, &mut self.allocator.lock().unwrap());
+            self.quad.destroy(bundle);
 
             debug!("Destroying swapchain framebuffers");
             for framebuffer in &self.swapchain_framebuffers {
-                device.destroy_framebuffer(*framebuffer, None);
+                bundle.device.destroy_framebuffer(*framebuffer, None);
             }
 
             debug!("Destroying pipeline");
-            device.destroy_pipeline(self.pipeline, None);
+            bundle.device.destroy_pipeline(self.pipeline, None);
 
             debug!("Destroying render pass");
-            device.destroy_render_pass(self.render_pass, None);
+            bundle.device.destroy_render_pass(self.render_pass, None);
 
             debug!("Destroying pipeline layout");
-            device.destroy_pipeline_layout(self.pipeline_layout, None);
+            bundle
+                .device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
 
             debug!("Destroying descriptor set layout");
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            bundle
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
 
             debug!("Destroying shaders");
-            self.vert_shader.destroy(device);
-            self.frag_shader.destroy(device);
+            self.vert_shader.destroy(bundle);
+            self.frag_shader.destroy(bundle);
 
             debug!("Destroying swapchain image views");
             for view in &self.chain_image_views {
-                device.destroy_image_view(*view, None);
+                bundle.device.destroy_image_view(*view, None);
             }
 
             debug!("Destroying swapchain");
-            let swapchain_loader = ash::khr::swapchain::Device::new(instance, device);
-            swapchain_loader.destroy_swapchain(self.swapchain, None);
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None);
             self.destroyed = true;
         } else {
             warn!("PresentationPipeline already destroyed");
@@ -360,26 +345,23 @@ impl PresentationPipeline {
     }
 
     unsafe fn create_swapchain(
+        bundle: Bundle,
         viewport: glam::UVec2,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
         surface: vk::SurfaceKHR,
-        physical_device: vk::PhysicalDevice,
         queues: &WindowedQueues,
         old_swapchain: Option<vk::SwapchainKHR>,
     ) -> anyhow::Result<(vk::SwapchainKHR, Vec<vk::Image>, vk::Format, vk::Extent2D)> {
-        let surface_loader = ash::khr::surface::Instance::new(entry, instance);
-        let swapchain_loader = ash::khr::swapchain::Device::new(instance, device);
+        let surface_loader = ash::khr::surface::Instance::new(bundle.entry, bundle.instance);
+        let swapchain_loader = ash::khr::swapchain::Device::new(bundle.instance, bundle.device);
 
         // Fetch information about the surface
-        let capabilities =
-            surface_loader.get_physical_device_surface_capabilities(physical_device, surface)?;
+        let capabilities = surface_loader
+            .get_physical_device_surface_capabilities(bundle.physical_device, surface)?;
         debug!("Surface capabilities: {:?}", capabilities);
         let formats =
-            surface_loader.get_physical_device_surface_formats(physical_device, surface)?;
-        let present_modes =
-            surface_loader.get_physical_device_surface_present_modes(physical_device, surface)?;
+            surface_loader.get_physical_device_surface_formats(bundle.physical_device, surface)?;
+        let present_modes = surface_loader
+            .get_physical_device_surface_present_modes(bundle.physical_device, surface)?;
 
         // Select the best format and present mode
         let format =
@@ -435,24 +417,23 @@ impl PresentationPipeline {
         let swapchain = swapchain_loader.create_swapchain(&create_info, None)?;
         Ok((
             swapchain,
-            Self::get_swapchain_images(instance, device, swapchain)?,
+            Self::get_swapchain_images(bundle, swapchain)?,
             formats[format].format,
             extent,
         ))
     }
 
     unsafe fn get_swapchain_images(
-        instance: &ash::Instance,
-        device: &Device,
+        bundle: Bundle,
         swapchain: vk::SwapchainKHR,
     ) -> anyhow::Result<Vec<vk::Image>> {
-        let swapchain_loader = ash::khr::swapchain::Device::new(instance, device);
+        let swapchain_loader = ash::khr::swapchain::Device::new(bundle.instance, bundle.device);
         let images = swapchain_loader.get_swapchain_images(swapchain)?;
         Ok(images)
     }
 
     unsafe fn create_image_views(
-        device: &Device,
+        bundle: Bundle,
         images: &[vk::Image],
         format: vk::Format,
     ) -> anyhow::Result<Vec<vk::ImageView>> {
@@ -476,7 +457,8 @@ impl PresentationPipeline {
                 })
                 .image(*image);
 
-            let view = device
+            let view = bundle
+                .device
                 .create_image_view(&create_info, None)
                 .with_context(|| format!("Failed to create image view for image {:?}", image))?;
             views.push(view);
@@ -486,7 +468,7 @@ impl PresentationPipeline {
     }
 
     unsafe fn create_render_pass(
-        device: &Device,
+        bundle: Bundle,
         format: vk::Format,
     ) -> anyhow::Result<vk::RenderPass> {
         let color_attachments = vec![vk::AttachmentDescription::default()
@@ -516,11 +498,11 @@ impl PresentationPipeline {
             .dependencies(&subpass_dependencies)
             .subpasses(&subpasses);
 
-        Ok(device.create_render_pass(&render_pass_info, None)?)
+        Ok(bundle.device.create_render_pass(&render_pass_info, None)?)
     }
 
     unsafe fn create_pipeline(
-        device: &Device,
+        bundle: Bundle,
         extent: vk::Extent2D,
         render_pass: vk::RenderPass,
         shader_stages: &[vk::PipelineShaderStageCreateInfo],
@@ -584,11 +566,15 @@ impl PresentationPipeline {
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::COMPUTE | vk::ShaderStageFlags::FRAGMENT)];
         let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
-        let descriptor_set_layout = device.create_descriptor_set_layout(&layout_info, None)?;
+        let descriptor_set_layout = bundle
+            .device
+            .create_descriptor_set_layout(&layout_info, None)?;
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(std::slice::from_ref(&descriptor_set_layout));
-        let pipline_layout = device.create_pipeline_layout(&pipeline_layout_info, None)?;
+        let pipline_layout = bundle
+            .device
+            .create_pipeline_layout(&pipeline_layout_info, None)?;
 
         let pipeline_info = vk::GraphicsPipelineCreateInfo::default()
             .stages(shader_stages)
@@ -602,7 +588,8 @@ impl PresentationPipeline {
             .layout(pipline_layout)
             .render_pass(render_pass)
             .subpass(0);
-        let pipeline = device
+        let pipeline = bundle
+            .device
             .create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)
             .map_err(|(_, e)| e)?
             .remove(0);
@@ -611,10 +598,10 @@ impl PresentationPipeline {
     }
 
     unsafe fn create_framebuffers(
+        bundle: Bundle,
         swapchain_image_views: &[vk::ImageView],
         render_pass: vk::RenderPass,
         extent: vk::Extent2D,
-        device: &Device,
     ) -> anyhow::Result<Vec<vk::Framebuffer>> {
         let mut framebuffers = Vec::with_capacity(swapchain_image_views.len());
         for view in swapchain_image_views {
@@ -625,7 +612,7 @@ impl PresentationPipeline {
                 .width(extent.width)
                 .height(extent.height)
                 .layers(1);
-            let framebuffer = device.create_framebuffer(&framebuffer_info, None)?;
+            let framebuffer = bundle.device.create_framebuffer(&framebuffer_info, None)?;
             framebuffers.push(framebuffer);
         }
 
@@ -633,23 +620,25 @@ impl PresentationPipeline {
     }
 
     unsafe fn create_command_buffers(
-        device: &Device,
+        bundle: Bundle,
         queues: &WindowedQueues,
     ) -> anyhow::Result<(vk::CommandPool, Vec<CommandBuffer>)> {
         let command_pool_info = vk::CommandPoolCreateInfo::default()
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
             .queue_family_index(queues.indices.graphics_family);
-        let command_pool = device.create_command_pool(&command_pool_info, None)?;
+        let command_pool = bundle
+            .device
+            .create_command_pool(&command_pool_info, None)?;
 
         let command_buffer = (0..MAX_FRAMES_IN_FLIGHT)
-            .map(|_| CommandBuffer::new_from_pool(device, command_pool))
+            .map(|_| CommandBuffer::new_from_pool(bundle, command_pool))
             .collect::<anyhow::Result<Vec<CommandBuffer>>>()?;
 
         Ok((command_pool, command_buffer))
     }
 
     unsafe fn create_sync_objects(
-        device: &Device,
+        bundle: Bundle,
         chain_images_len: usize,
     ) -> anyhow::Result<(
         Vec<vk::Semaphore>, // image_available_semaphores
@@ -664,14 +653,14 @@ impl PresentationPipeline {
         let mut image_available = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
         let mut in_flight = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
-            image_available.push(device.create_semaphore(&sem_info, None)?);
-            in_flight.push(device.create_fence(&fence_info, None)?);
+            image_available.push(bundle.device.create_semaphore(&sem_info, None)?);
+            in_flight.push(bundle.device.create_fence(&fence_info, None)?);
         }
 
         // Per image
         let mut render_finished = Vec::with_capacity(chain_images_len);
         for _ in 0..chain_images_len {
-            render_finished.push(device.create_semaphore(&sem_info, None)?);
+            render_finished.push(bundle.device.create_semaphore(&sem_info, None)?);
         }
         let images_in_flight = vec![vk::Fence::null(); chain_images_len];
 
@@ -685,6 +674,7 @@ impl PresentationPipeline {
 
     unsafe fn record_egui_buffer(
         &mut self,
+        bundle: Bundle,
         w: &Window,
         command_buffer: &CommandBuffer,
     ) -> anyhow::Result<()> {
@@ -705,7 +695,7 @@ impl PresentationPipeline {
             pixels_per_point,
             ..
         } = (*ui).egui.egui_ctx().run(raw_input, |ctx| {
-            (*ui).render(ctx, self.allocator.lock().unwrap().deref_mut());
+            (*ui).render(bundle, ctx);
         });
 
         if !textures_delta.free.is_empty() {
@@ -739,31 +729,33 @@ impl PresentationPipeline {
 
     unsafe fn record_command_buffer(
         &self,
+        bundle: Bundle,
         command_buffer: &CommandBuffer,
         tracer_slot: &TracerSlot,
-        device: &Device,
     ) -> anyhow::Result<()> {
-        command_buffer.bind_pipeline(device, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
-        command_buffer.bind_descriptor_sets(
-            device,
+        bundle.device.cmd_bind_pipeline(
+            command_buffer.as_inner(),
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline,
+        );
+        bundle.device.cmd_bind_descriptor_sets(
+            command_buffer.as_inner(),
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline_layout,
             0,
             &[tracer_slot.descriptor_set],
             &[],
         );
-        self.quad.draw(device, command_buffer);
+
+        self.quad.draw(bundle, command_buffer);
 
         Ok(())
     }
 
     pub(crate) unsafe fn resize(
         &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
+        bundle: Bundle,
         surface: vk::SurfaceKHR,
-        physical_device: vk::PhysicalDevice,
         viewport: glam::UVec2,
     ) -> anyhow::Result<()> {
         if self.viewport != viewport {
@@ -772,7 +764,7 @@ impl PresentationPipeline {
                 self.viewport, viewport
             );
             self.viewport = viewport;
-            return self.on_suboptimal(entry, instance, device, surface, physical_device, viewport);
+            return self.on_suboptimal(bundle, surface, viewport);
         }
 
         Ok(())
@@ -780,14 +772,14 @@ impl PresentationPipeline {
 
     unsafe fn render(
         &mut self,
+        bundle: Bundle,
         w: &Window,
         command_buffer: &CommandBuffer,
-        device: &Device,
         image_index: usize,
         tracer_slot: &TracerSlot,
     ) -> anyhow::Result<()> {
-        command_buffer.reset(device)?;
-        command_buffer.begin(device)?;
+        command_buffer.reset(bundle)?;
+        command_buffer.begin(bundle)?;
 
         let clear_values = vec![vk::ClearValue {
             color: vk::ClearColorValue {
@@ -802,8 +794,6 @@ impl PresentationPipeline {
                 extent: self.chain_extent,
             })
             .clear_values(&clear_values);
-        command_buffer.begin_renderpass(device, &render_pass_info, vk::SubpassContents::INLINE);
-
         let viewport = vk::Viewport::default()
             .x(0.0)
             .y(0.0)
@@ -811,47 +801,47 @@ impl PresentationPipeline {
             .height(self.chain_extent.height as f32)
             .min_depth(0.0)
             .max_depth(1.0);
-        command_buffer.set_viewport(device, viewport);
         let scissor = vk::Rect2D::default()
             .offset(vk::Offset2D { x: 0, y: 0 })
             .extent(self.chain_extent);
-        command_buffer.set_scissor(device, scissor);
 
-        self.record_command_buffer(command_buffer, tracer_slot, device)?;
-        self.record_egui_buffer(w, command_buffer)?;
+        bundle.device.cmd_begin_render_pass(
+            command_buffer.as_inner(),
+            &render_pass_info,
+            vk::SubpassContents::INLINE,
+        );
+        bundle
+            .device
+            .cmd_set_viewport(command_buffer.as_inner(), 0, &[viewport]);
 
-        command_buffer.end_renderpass(device);
-        command_buffer.end(device)?;
+        bundle
+            .device
+            .cmd_set_scissor(command_buffer.as_inner(), 0, &[scissor]);
+
+        self.record_command_buffer(bundle, command_buffer, tracer_slot)?;
+        self.record_egui_buffer(bundle, w, command_buffer)?;
+
+        bundle.device.cmd_end_render_pass(command_buffer.as_inner());
+        command_buffer.end(bundle)?;
 
         Ok(())
     }
 
     pub unsafe fn on_suboptimal(
         &mut self,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
+        bundle: Bundle,
         surface: vk::SurfaceKHR,
-        physical_device: vk::PhysicalDevice,
         viewport: glam::UVec2,
     ) -> anyhow::Result<()> {
         debug!("Swapchain is suboptimal, needs recreation");
 
         // Cleanup old swapchain
-        self.swapchain_cleanup(device);
+        self.swapchain_cleanup(bundle);
 
         // Create new swapchain
         let old_swapchain = self.swapchain;
-        let (swapchain, images, format, extent) = Self::create_swapchain(
-            viewport,
-            entry,
-            instance,
-            device,
-            surface,
-            physical_device,
-            &self.queues,
-            Some(old_swapchain),
-        )?;
+        let (swapchain, images, format, extent) =
+            Self::create_swapchain(bundle, viewport, surface, &self.queues, Some(old_swapchain))?;
 
         let format_changed = format != self.chain_image_format;
         self.swapchain = swapchain;
@@ -864,17 +854,21 @@ impl PresentationPipeline {
 
         // Create new swapchain image views
         self.chain_image_views =
-            Self::create_image_views(device, &self.chain_images, self.chain_image_format)?;
+            Self::create_image_views(bundle, &self.chain_images, self.chain_image_format)?;
 
         // If format changed, recreate pipeline
         if format_changed {
-            device.destroy_pipeline(self.pipeline, None);
-            device.destroy_render_pass(self.render_pass, None);
-            device.destroy_pipeline_layout(self.pipeline_layout, None);
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            bundle.device.destroy_pipeline(self.pipeline, None);
+            bundle.device.destroy_render_pass(self.render_pass, None);
+            bundle
+                .device
+                .destroy_pipeline_layout(self.pipeline_layout, None);
+            bundle
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
 
             let render_pass =
-                Self::create_render_pass(device, format).context("Failed to create render pass")?;
+                Self::create_render_pass(bundle, format).context("Failed to create render pass")?;
 
             let stages = vec![
                 vk::PipelineShaderStageCreateInfo::default()
@@ -887,7 +881,7 @@ impl PresentationPipeline {
                     .name(c"main"),
             ];
             let (descriptor_set_layout, pipeline_layout, pipeline) =
-                Self::create_pipeline(device, extent, render_pass, &stages)
+                Self::create_pipeline(bundle, extent, render_pass, &stages)
                     .context("Failed to create pipeline")?;
 
             self.descriptor_set_layout = descriptor_set_layout;
@@ -898,16 +892,16 @@ impl PresentationPipeline {
 
         // New framebuffers
         self.swapchain_framebuffers = Self::create_framebuffers(
+            bundle,
             &self.chain_image_views,
             self.render_pass,
             self.chain_extent,
-            device,
         )?;
 
         // Recreate per-image semaphores
         let sem_info = vk::SemaphoreCreateInfo::default();
         self.render_finished_semaphores = (0..self.chain_images.len())
-            .map(|_| device.create_semaphore(&sem_info, None))
+            .map(|_| bundle.device.create_semaphore(&sem_info, None))
             .collect::<Result<_, _>>()?;
         self.images_in_flight = vec![vk::Fence::null(); self.chain_images.len()];
         self.current_frame = 0;
@@ -917,16 +911,17 @@ impl PresentationPipeline {
 
     pub unsafe fn present(
         &mut self,
+        bundle: Bundle,
         w: &Window,
-        entry: &ash::Entry,
-        instance: &ash::Instance,
-        device: &Device,
         surface: vk::SurfaceKHR,
-        physical_device: vk::PhysicalDevice,
         tracer_slot: TracerSlot,
     ) -> anyhow::Result<()> {
         // Wait for the fence to be signaled
-        device.wait_for_fences(&[self.in_flight_fences[self.current_frame]], true, u64::MAX)?;
+        bundle.device.wait_for_fences(
+            &[self.in_flight_fences[self.current_frame]],
+            true,
+            u64::MAX,
+        )?;
 
         // Acquire next image
         let index = match self.swapchain_loader.acquire_next_image(
@@ -937,14 +932,7 @@ impl PresentationPipeline {
         ) {
             Ok((index, false)) => index as usize,
             Ok((_, true)) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return self.on_suboptimal(
-                    entry,
-                    instance,
-                    device,
-                    surface,
-                    physical_device,
-                    self.viewport,
-                );
+                return self.on_suboptimal(bundle, surface, self.viewport);
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
@@ -958,14 +946,18 @@ impl PresentationPipeline {
         if self.images_in_flight[index] != vk::Fence::null()
             && self.images_in_flight[index] != self.in_flight_fences[self.current_frame]
         {
-            device.wait_for_fences(&[self.images_in_flight[index]], true, u64::MAX)?;
+            bundle
+                .device
+                .wait_for_fences(&[self.images_in_flight[index]], true, u64::MAX)?;
         }
         self.images_in_flight[index] = self.in_flight_fences[self.current_frame];
 
         // Record command buffer
         let buffer_ptr: *mut CommandBuffer = &mut self.command_buffers[self.current_frame];
-        self.render(w, buffer_ptr.as_ref().unwrap(), device, index, &tracer_slot)?;
-        device.reset_fences(&[self.in_flight_fences[self.current_frame]])?;
+        self.render(bundle, w, buffer_ptr.as_ref().unwrap(), index, &tracer_slot)?;
+        bundle
+            .device
+            .reset_fences(&[self.in_flight_fences[self.current_frame]])?;
 
         // Submit
         let wait_semaphores = vec![self.image_available_semaphores[self.current_frame]];
@@ -978,7 +970,7 @@ impl PresentationPipeline {
             .wait_dst_stage_mask(&wait_stages)
             .command_buffers(&command_buffers)
             .signal_semaphores(&signal_semaphores);
-        device.queue_submit(
+        bundle.device.queue_submit(
             self.queues.graphics_queue,
             &[submit_info],
             self.in_flight_fences[self.current_frame],
@@ -998,14 +990,7 @@ impl PresentationPipeline {
         {
             Ok(false) => {}
             Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                return self.on_suboptimal(
-                    entry,
-                    instance,
-                    device,
-                    surface,
-                    physical_device,
-                    self.viewport,
-                );
+                return self.on_suboptimal(bundle, surface, self.viewport);
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
