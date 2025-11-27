@@ -52,12 +52,11 @@ impl Front for TracerHeadlessFront {
         available: &Vec<String>,
         capabilities: &mut DeviceCapabilities,
     ) -> anyhow::Result<Vec<*const c_char>> {
-        const VK_EXT_HOST_IMAGE_COPY_NAME: &CStr = c"VK_EXT_host_image_copy";
         let mut required = vec![];
-        if available.contains(&VK_EXT_HOST_IMAGE_COPY_NAME.to_str()?.to_string()) {
+        if available.contains(&ash::ext::host_image_copy::NAME.to_str()?.to_string()) {
             capabilities.host_image_copy = true;
             info!("Image copy extension required");
-            required.push(VK_EXT_HOST_IMAGE_COPY_NAME.as_ptr() as *const c_char);
+            required.push(ash::ext::host_image_copy::NAME.as_ptr());
         }
 
         Ok(required)
