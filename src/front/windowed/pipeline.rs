@@ -7,15 +7,12 @@ use crate::front::windowed::quad::{QuadBuffer, QuadVertex};
 use crate::front::windowed::ui::UICompositor;
 use crate::tracer::Bundle;
 use anyhow::Context;
-use ash::{vk, Device};
+use ash::vk;
 use egui::{FullOutput, TextureId};
 use glam::UVec2;
-use gpu_allocator::vulkan::Allocator;
 use log::{debug, warn};
 use std::cell::RefCell;
-use std::ops::DerefMut;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use std::vec;
 use winit::window::Window;
 

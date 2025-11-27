@@ -1,8 +1,8 @@
 use crate::common::buffer::create_device_local_buffer_with_data;
 use crate::common::command_buffer::CommandBuffer;
 use crate::tracer::Bundle;
-use ash::{vk, Device};
-use gpu_allocator::vulkan::{Allocation, Allocator};
+use ash::vk;
+use gpu_allocator::vulkan::Allocation;
 use std::mem::offset_of;
 
 // Fullscreen quad vertices

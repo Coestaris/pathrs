@@ -1,7 +1,7 @@
 use crate::common::command_buffer::CommandBuffer;
 use crate::tracer::Bundle;
-use ash::{vk, Device};
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
+use ash::vk;
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use gpu_allocator::MemoryLocation;
 
 pub unsafe fn create_device_local_buffer_with_data<T: Copy>(

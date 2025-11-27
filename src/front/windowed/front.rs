@@ -8,12 +8,10 @@ use crate::front::{Front, QueueFamilyIndices};
 use crate::tracer::Bundle;
 use anyhow::Context;
 use ash::{vk, Device};
-use gpu_allocator::vulkan::Allocator;
 use log::{debug, warn};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use winit::raw_window_handle::{
     DisplayHandle, RawDisplayHandle, RawWindowHandle, WindowHandle, XlibDisplayHandle,
     XlibWindowHandle,
@@ -315,11 +313,7 @@ impl Front for TracerWindowedFront {
         })
     }
 
-    unsafe fn init(
-        &mut self,
-        bundle: Bundle,
-        queues: WindowedQueues,
-    ) -> anyhow::Result<()> {
+    unsafe fn init(&mut self, bundle: Bundle, queues: WindowedQueues) -> anyhow::Result<()> {
         self.runtime = Some(
             PresentationPipeline::new(
                 bundle,

@@ -7,12 +7,11 @@ use crate::common::shader::Shader;
 use crate::fps::Fps;
 use crate::tracer::{Bundle, TracerProfile};
 use anyhow::Context;
-use ash::vk::{Extent2D, PhysicalDevice};
-use ash::{vk, Device, Instance};
+use ash::vk;
+use ash::vk::Extent2D;
 use glam::FloatExt;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use log::{debug, warn};
-use std::sync::{Arc, Mutex};
 
 const COMPUTE_ASSET: &str = "shaders/shader.comp.spv";
 const MAX_DEPTH: usize = 2;
