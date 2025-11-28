@@ -11,6 +11,7 @@ use crate::logging::setup_logging;
 use clap::builder::PossibleValuesParser;
 use clap::Parser;
 use glam::UVec2;
+use image::{ImageBuffer, Rgb};
 use log::{info, LevelFilter};
 use winit::event_loop::{ControlFlow, EventLoop};
 
@@ -35,14 +36,17 @@ struct Arguments {
 
     #[clap(long, default_value_t = 1280)]
     width: u32,
+
     #[clap(long, default_value_t = 720)]
     height: u32,
+
     #[clap(
         short = 'd',
         long,
-        help = "Run in headless mode. No window will be created"
+        help = "If set, run the tracer in headless mode, outputting the specified path as a PNG image"
     )]
-    headless: bool,
+    headless: Option<String>,
+
     #[clap(short = 'c', long, help = "Path to the config file in JSON format")]
     config: Option<String>,
 }
@@ -74,21 +78,24 @@ fn main() -> anyhow::Result<()> {
     let asset_manager = AssetManager::new_from_pwd(&std::env::current_dir()?)?;
 
     let viewport = UVec2::new(args.width, args.height);
-    if args.headless {
+    if let Some(path) = args.headless {
         unsafe {
             let mut tracer = headless_tracer(
                 config,
                 asset_manager,
                 viewport,
                 get_build_info().clone(),
-                |output| {
-                    // TODO: Save to file or process output
+                move |output| {
                     info!(
                         "Received headless output: {}x{}, {} bytes",
                         output.width,
                         output.height,
                         output.rgb888.len()
                     );
+
+                    let image: ImageBuffer<Rgb<u8>, _> =
+                        ImageBuffer::from_raw(output.width, output.height, output.rgb888).unwrap();
+                    image.save(&path).unwrap();
                 },
             )?;
             tracer.trace(None)?;

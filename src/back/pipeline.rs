@@ -1,7 +1,7 @@
 use crate::assets::AssetManager;
 use crate::back::push_constants::PushConstantsData;
 use crate::back::ssbo::{ParametersSSBO, ParametersSSBOData};
-use crate::back::{BackQueues, TracerSlot};
+use crate::back::{BackQueues, TracerSlot, TracerSlotImage};
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
 use crate::fps::Fps;
@@ -45,6 +45,7 @@ pub(crate) struct TracerPipeline {
     image_views: Vec<vk::ImageView>,            // size = MAX_DEPTH
     image_samplers: Vec<vk::Sampler>,           // size = MAX_DEPTH
     image_allocations: Vec<Option<Allocation>>, // size = MAX_DEPTH
+    image_bytesize: usize,
 
     fences: Vec<vk::Fence>, // size = MAX_DEPTH
 
@@ -65,7 +66,7 @@ impl TracerPipeline {
         let (command_pool, command_buffers) = Self::create_command_buffers(bundle, &queues)
             .context("Failed to create command buffers")?;
 
-        let (images, image_views, image_samplers, image_allocations) =
+        let (image_bytesize, images, image_views, image_samplers, image_allocations) =
             Self::create_images(bundle, &queues, command_pool, viewport)
                 .context("Failed to create images")?;
 
@@ -133,6 +134,7 @@ impl TracerPipeline {
             image_views,
             image_samplers,
             image_allocations: image_allocations.into_iter().map(Some).collect(),
+            image_bytesize,
             fences,
             current_frame: 0,
             last_finished_frame: None,
@@ -174,6 +176,7 @@ impl TracerPipeline {
         command_pool: vk::CommandPool,
         viewport: glam::UVec2,
     ) -> anyhow::Result<(
+        usize,
         Vec<vk::Image>,
         Vec<vk::ImageView>,
         Vec<vk::Sampler>,
@@ -183,6 +186,7 @@ impl TracerPipeline {
         let mut image_views = Vec::with_capacity(MAX_DEPTH);
         let mut image_samplers = Vec::with_capacity(MAX_DEPTH);
         let mut image_allocations = Vec::with_capacity(MAX_DEPTH);
+        let mut image_bytesize = 0;
 
         for depth in 0..MAX_DEPTH {
             let queue_family_indices = [
@@ -201,13 +205,14 @@ impl TracerPipeline {
                 .array_layers(1)
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .tiling(vk::ImageTiling::OPTIMAL)
-                .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED)
+                .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::HOST_TRANSFER_EXT)
                 .sharing_mode(vk::SharingMode::CONCURRENT)
                 .queue_family_indices(&queue_family_indices)
                 .initial_layout(vk::ImageLayout::UNDEFINED);
             let image = bundle.device.create_image(&create_image_info, None)?;
 
             let mem_requirements = bundle.device.get_image_memory_requirements(image);
+            image_bytesize = mem_requirements.size as usize;
             let allocation = bundle.allocator().allocate(&AllocationCreateDesc {
                 name: format!("Tracer Pipeline Image Allocation {}", depth).as_str(),
                 requirements: mem_requirements,
@@ -287,7 +292,13 @@ impl TracerPipeline {
             image_samplers.push(sampler);
         }
 
-        Ok((images, image_views, image_samplers, image_allocations))
+        Ok((
+            image_bytesize,
+            images,
+            image_views,
+            image_samplers,
+            image_allocations,
+        ))
     }
 
     unsafe fn create_command_buffers(
@@ -633,9 +644,15 @@ impl TracerPipeline {
         // Return last processed frame
         if let Some(idx) = self.last_finished_frame {
             Ok(TracerSlot {
-                image: self.images[idx],
-                image_view: self.image_views[idx],
-                sampler: self.image_samplers[idx],
+                image: TracerSlotImage {
+                    image: self.images[idx],
+                    image_view: self.image_views[idx],
+                    sampler: self.image_samplers[idx],
+                    dimensions: self.viewport,
+                    byte_size: self.image_bytesize,
+                    layout: vk::ImageLayout::GENERAL,
+                    format: vk::Format::R8G8B8A8_UNORM,
+                },
                 descriptor_set: self.descriptor_sets_0[idx],
                 index: idx,
             })
@@ -676,7 +693,7 @@ impl TracerPipeline {
                 .destroy_descriptor_pool(self.descriptor_pool_0, None);
 
             // Create new images
-            let (images, image_views, image_samplers, image_allocations) =
+            let (image_bytesize, images, image_views, image_samplers, image_allocations) =
                 Self::create_images(bundle, &self.queues, self.command_pool, self.viewport)
                     .context("Failed to create images")?;
 
@@ -684,6 +701,7 @@ impl TracerPipeline {
             self.image_views = image_views;
             self.image_samplers = image_samplers;
             self.image_allocations = image_allocations.into_iter().map(Some).collect();
+            self.image_bytesize = image_bytesize;
 
             // Create new descriptor sets
             let (descriptor_set_layout_0, descriptor_pool_0, descriptor_sets_0) =

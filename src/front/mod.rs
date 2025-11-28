@@ -62,6 +62,7 @@ pub trait Front {
         _entry: &Entry,
         _instance: &Instance,
         _physical_device: vk::PhysicalDevice,
+        _device_capabilities: &DeviceCapabilities,
         create_info: vk::DeviceCreateInfo,
         on_patched: &mut impl FnMut(vk::DeviceCreateInfo) -> anyhow::Result<Device>,
     ) -> anyhow::Result<Device> {

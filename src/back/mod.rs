@@ -15,10 +15,20 @@ use ash::{vk, Device, Entry, Instance};
 use std::ffi::c_char;
 
 #[allow(dead_code)]
-pub struct TracerSlot {
+pub struct TracerSlotImage {
     pub image: vk::Image,
     pub image_view: vk::ImageView,
     pub sampler: vk::Sampler,
+
+    pub dimensions: glam::UVec2,
+    pub byte_size: usize,
+    pub layout: vk::ImageLayout,
+    pub format: vk::Format,
+}
+
+#[allow(dead_code)]
+pub struct TracerSlot {
+    pub image: TracerSlotImage,
     pub descriptor_set: vk::DescriptorSet,
     pub index: usize,
 }

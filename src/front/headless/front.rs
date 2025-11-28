@@ -6,7 +6,7 @@ use crate::front::{Front, QueueFamilyIndices};
 use crate::tracer::Bundle;
 use ash::{vk, Device, Entry, Instance};
 use log::info;
-use std::ffi::{c_char, CStr};
+use std::ffi::{c_char, c_void};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -44,6 +44,19 @@ impl TracerHeadlessFront {
     }
 }
 
+impl TracerHeadlessOutput {
+    pub fn from_rgba8888(width: u32, height: u32, rgba8888: Vec<u8>) -> Self {
+        Self {
+            width,
+            height,
+            rgb888: rgba8888
+                .chunks(4)
+                .flat_map(|pixel| vec![pixel[0], pixel[1], pixel[2]])
+                .collect(),
+        }
+    }
+}
+
 impl Front for TracerHeadlessFront {
     type FrontQueueFamilyIndices = HeadlessQueueFamilyIndices;
 
@@ -71,20 +84,70 @@ impl Front for TracerHeadlessFront {
         Ok(HeadlessQueueFamilyIndices {})
     }
 
+    unsafe fn patch_create_device_info(
+        &self,
+        _entry: &Entry,
+        _instance: &Instance,
+        _physical_device: vk::PhysicalDevice,
+        device_capabilities: &DeviceCapabilities,
+        create_info: vk::DeviceCreateInfo,
+        on_patched: &mut impl FnMut(vk::DeviceCreateInfo) -> anyhow::Result<Device>,
+    ) -> anyhow::Result<Device> {
+        if device_capabilities.host_image_copy {
+            let mut physical_device_host_image_copy_features =
+                vk::PhysicalDeviceHostImageCopyFeaturesEXT::default().host_image_copy(true);
+            let create_info = create_info.push_next(&mut physical_device_host_image_copy_features);
+            on_patched(create_info)
+        } else {
+            on_patched(create_info)
+        }
+    }
+
     unsafe fn present(
         &mut self,
-        _bundle: Bundle,
+        bundle: Bundle,
         _w: Option<&winit::window::Window>,
-        _slot: TracerSlot,
+        slot: TracerSlot,
     ) -> anyhow::Result<()> {
         info!("Presenting frame");
 
-        // TODO: Transfer framebuffer from the GPU to the CPU
-        (self.callback)(TracerHeadlessOutput {
-            width: 800,
-            height: 600,
-            rgb888: vec![0; 800 * 600 * 3],
-        });
+        let memory = vec![0u8; slot.image.byte_size];
+        if bundle.device_capabilities.host_image_copy {
+            let factory = ash::ext::host_image_copy::Device::new(&bundle.instance, &bundle.device);
+            let regions = vk::ImageToMemoryCopyEXT::default()
+                .host_pointer(memory.as_ptr() as *mut c_void)
+                .image_subresource(
+                    vk::ImageSubresourceLayers::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .mip_level(0)
+                        .base_array_layer(0)
+                        .layer_count(1),
+                )
+                .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                .image_extent(vk::Extent3D {
+                    width: slot.image.dimensions.x,
+                    height: slot.image.dimensions.y,
+                    depth: 1,
+                });
+            let copy_image_to_memory_info = vk::CopyImageToMemoryInfoEXT::default()
+                .regions(std::slice::from_ref(&regions))
+                .src_image(slot.image.image)
+                .src_image_layout(slot.image.layout);
+            factory.copy_image_to_memory(&copy_image_to_memory_info)?;
+        } else {
+            unimplemented!("Not yet implemented without host image copy extension")
+        }
+
+        let data = match slot.image.format {
+            vk::Format::R8G8B8A8_UNORM => TracerHeadlessOutput::from_rgba8888(
+                slot.image.dimensions.x,
+                slot.image.dimensions.y,
+                memory,
+            ),
+            _ => panic!("Unsupported image format"),
+        };
+
+        (self.callback)(data);
 
         Ok(())
     }

@@ -454,6 +454,7 @@ impl<F: Front> Tracer<F> {
             entry,
             instance,
             physical_device,
+            &capabilities,
             device_create_info,
             &mut |device_create_info| {
                 Back::patch_create_device_info(
