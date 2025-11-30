@@ -256,7 +256,7 @@ impl PresentationPipeline {
         }
     }
 
-    fn choose_surface_format(formats: &[vk::SurfaceFormatKHR]) -> Option<usize> {
+    fn choose_surface_format(formats: &[vk::SurfaceFormatKHR]) -> anyhow::Result<usize> {
         let mut best_format = None;
         let mut best_score = 0;
 
@@ -266,6 +266,12 @@ impl PresentationPipeline {
                 (vk::Format::B8G8R8A8_SRGB, vk::ColorSpaceKHR::SRGB_NONLINEAR) => 8,
                 (vk::Format::R8G8B8A8_UNORM, vk::ColorSpaceKHR::SRGB_NONLINEAR) => 6,
                 (vk::Format::B8G8R8A8_UNORM, vk::ColorSpaceKHR::SRGB_NONLINEAR) => 4,
+
+                // HDR format are not supported for now.
+                // Assign negative scores to avoid selecting them.
+                (vk::Format::R16G16B16A16_SFLOAT, _) => -1,
+                (vk::Format::A2B10G10R10_UNORM_PACK32, _) => -1,
+
                 (_, _) => {
                     warn!(
                         "Cannot score: {:?}, {:?}",
@@ -280,7 +286,15 @@ impl PresentationPipeline {
             }
         }
 
-        best_format
+        if best_score <= 0 || best_format.is_none() {
+            anyhow::bail!(
+                "No suitable surface format found. Best score: {} / {:?}",
+                best_score,
+                best_format
+            )
+        } else {
+            Ok(best_format.unwrap())
+        }
     }
 
     fn choose_present_mode(modes: &[vk::PresentModeKHR]) -> Option<usize> {
