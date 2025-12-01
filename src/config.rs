@@ -16,7 +16,7 @@ impl Default for Camera {
         Self {
             position: Vec3::ZERO,
             direction: Vec3::new(0.0, 0.0, -1.0),
-            fov: std::f32::consts::FRAC_PI_4,
+            fov: std::f32::consts::FRAC_PI_2,
         }
     }
 }
@@ -25,7 +25,7 @@ impl Camera {
     pub fn as_transform(&self) -> Mat4 {
         let forward = self.direction.normalize();
         let right = forward.cross(Vec3::Y).normalize();
-        let up = right.cross(forward);
+        let up = -right.cross(forward);
 
         Mat4::from_cols(
             right.extend(0.0),
@@ -59,19 +59,14 @@ impl Default for TracerConfigInner {
             camera: Camera::default(),
             objects: vec![
                 Object::Sphere {
-                    center: Vec3::new(0.0, 0.0, -3.0),
-                    radius: 1.0,
+                    center: Vec3::new(0.0, 0.0, -1.0),
+                    radius: 0.5,
                     color: Vec3::new(1.0, 0.0, 0.0),
                 },
                 Object::Sphere {
-                    center: Vec3::new(2.0, 0.0, -4.0),
-                    radius: 1.0,
-                    color: Vec3::new(0.0, 1.0, 0.0),
-                },
-                Object::Sphere {
-                    center: Vec3::new(-2.0, 0.0, -4.0),
-                    radius: 1.0,
-                    color: Vec3::new(0.0, 0.0, 1.0),
+                    center: Vec3::new(0.0, -100.5, -1.0),
+                    radius: 100.0,
+                    color: Vec3::new(0.3, 0.8, 0.2),
                 },
             ],
             updated: true,
