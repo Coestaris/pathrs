@@ -57,32 +57,49 @@ float hits_object(Object obj, vec3 ray_origin, vec3 ray_direction) {
     }
 }
 
-vec4 trace(vec3 camera_position, vec3 ray_direction) {
+struct hit_s {
+    float t;
+    vec3 point;
+    vec3 normal;
+    vec3 color;
+};
+
+bool hits_world(vec3 ray_origin, vec3 ray_direction, out hit_s hit) {
     float closest_t = 1e20;
-    int hit_object_index = -1;
-    for (int i = 0; i < int(in_config.objects_count); i++) {
-        float t = hits_object(objects[i], camera_position, ray_direction);
+    bool hit_anything = false;
+    int closest_index = -1;
+
+    for (int i = 0; i <int(in_config.objects_count); i++) {
+        float t = hits_object(objects[i], ray_origin, ray_direction);
         if (t > 0.0 && t < closest_t) {
             closest_t = t;
-            hit_object_index = i;
+            closest_index = i;
+            hit_anything = true;
         }
     }
 
-    if (hit_object_index != -1){
-        Object hit_object = objects[hit_object_index];
-        float t = closest_t;
-        vec3 hit_point = camera_position + t * ray_direction;
-        vec3 normal = normalize(hit_point - hit_object.data1.xyz);
+    if (hit_anything) {
+        hit.t = closest_t;
+        hit.point = ray_origin + closest_t * ray_direction;
+        Object hit_object = objects[closest_index];
+        hit.normal = normalize(hit.point - hit_object.data1.xyz);
+        hit.color = hit_object.color.rgb;
+    }
 
+    return hit_anything;
+}
+
+vec4 trace(vec3 camera_position, vec3 ray_direction) {
+    hit_s hit;
+    if (hits_world(camera_position, ray_direction, hit)) {
         // Simple shading based on normal
-        float lighting = max(dot(normal, normalize(vec3(1.0, 1.0, 1.0))), 0.0);
-        vec3 color = hit_object.color.rgb * lighting;
+        float lighting = max(dot(hit.normal, normalize(vec3(1.0, 1.0, 1.0))), 0.0);
+        vec3 color = hit.color * lighting;
         return vec4(color, 1.0);
     }
 
-    // Simple sky gradient based on ray direction
-    vec3 color = sky_color(ray_direction).rgb;
-    return vec4(color, 1.0);
+    // If no hit, return sky color
+    return sky_color(ray_direction);
 }
 
 void main() {
