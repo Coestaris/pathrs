@@ -3,33 +3,70 @@
 layout (local_size_x = 16, local_size_y = 16) in;
 layout (set = 0, binding = 0, rgba8) uniform writeonly image2D output_image;
 
-layout (set = 1, binding = 0, std140) readonly buffer parameters {
-    float slider;
+layout (std430, set = 1, binding = 0) readonly buffer parameters {
+    mat4  camera_transform;
+    float camera_fov;
 
 } in_parameters;
 
 layout (push_constant) uniform constants {
     float time;
+
 } in_runtime;
 
-vec4 ray_trace(ivec2 pixel_coords) {
-    // Placeholder for ray tracing logic
-    float slider = in_parameters.slider;
-    float normalized_x = float(pixel_coords.x) / float(imageSize(output_image).x);
-    float normalized_y = float(pixel_coords.y) / float(imageSize(output_image).y);
-    vec3 color = vec3(normalized_x * sin(slider), normalized_y * cos(slider), 0.5 + 0.5 * sin(in_runtime.time));
+vec4 sky_color(vec3 direction) {
+    float t = 0.5 * (direction.y + 1.0);
+    return mix(vec4(1.0, 1.0, 1.0, 1.0), vec4(0.0, 0.0, 1.0, 1.0), t);
+}
+
+bool hits_sphere(vec3 center, float radius, vec3 ray_origin, vec3 ray_direction) {
+    vec3 oc = ray_origin - center;
+    float a = dot(ray_direction, ray_direction);
+    float b = 2.0 * dot(oc, ray_direction);
+    float c = dot(oc, oc) - radius * radius;
+    float discriminant = b * b - 4.0 * a * c;
+    return (discriminant > 0.0);
+}
+
+vec4 ray_trace(vec3 camera_position, vec3 ray_direction) {
+    if (hits_sphere(vec3(0.0, 0.0, 5.0), 0.5, camera_position, ray_direction)) {
+        return vec4(1.0, 0.0, 0.0, 1.0);// Red color for the sphere
+    }
+
+    // Simple sky gradient based on ray direction
+    vec3 color = sky_color(ray_direction).rgb;
     return vec4(color, 1.0);
 }
 
 void main() {
-    ivec2 imgSize = imageSize(output_image);
-    ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 viewport = imageSize(output_image);
+    ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
 
-    if (coords.x >= imgSize.x || coords.y >= imgSize.y)
+    if (pixel_coords.x >= viewport.x || pixel_coords.y >= viewport.y)
     {
         return;
     }
 
-    vec4 new_pixel = ray_trace(coords);
-    imageStore(output_image, coords, new_pixel);
+    vec2 uv = (vec2(pixel_coords) + 0.5) / vec2(viewport); // [0..1]
+    vec2 ndc = uv * 2.0 - 1.0; // [-1..1]
+    float aspect = float(viewport.x) / float(viewport.y);
+    ndc.x *= aspect;
+
+    float fov = in_parameters.camera_fov.x;
+    float scale = tan(fov * 0.5);
+    vec3 dir_cam = normalize(vec3(ndc * scale, -1.0));
+
+    vec3 camera_forward = normalize(in_parameters.camera_transform[2].xyz);
+    vec3 camera_right = normalize(in_parameters.camera_transform[0].xyz);
+    vec3 camera_up = normalize(in_parameters.camera_transform[1].xyz);
+    vec3 dir_world = normalize(
+        dir_cam.x * camera_right +
+        dir_cam.y * camera_up +
+        dir_cam.z * camera_forward
+    );
+    vec3 camera_position = in_parameters.camera_transform[3].xyz;
+
+    vec4 new_pixel = ray_trace(camera_position, dir_world);
+
+    imageStore(output_image, pixel_coords, new_pixel);
 }

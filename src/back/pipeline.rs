@@ -614,7 +614,7 @@ impl TracerPipeline {
     pub unsafe fn present(
         &mut self,
         bundle: Bundle,
-        parameters_data: ParametersSSBOData,
+        parameters_data: Option<ParametersSSBOData>,
         push_constants_data: PushConstantsData,
     ) -> anyhow::Result<TracerSlot> {
         let current_frame = self.current_frame;
@@ -626,7 +626,10 @@ impl TracerPipeline {
                 need_timestamp = true;
             }
 
-            self.parameters_ssbo.update(parameters_data);
+            // Update parameters SSBO if needed
+            if let Some(parameters_data) = parameters_data {
+                self.parameters_ssbo.update(parameters_data);
+            }
 
             self.enqueue_new_frame(bundle, need_timestamp, current_frame, push_constants_data)?;
 

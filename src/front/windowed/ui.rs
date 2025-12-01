@@ -1,5 +1,6 @@
 use crate::config::TracerConfig;
 use crate::tracer::{Bundle, TracerProfile};
+use egui::Widget;
 use gpu_allocator::vulkan::AllocatorVisualizer;
 
 pub struct UICompositor {
@@ -8,6 +9,19 @@ pub struct UICompositor {
     config: TracerConfig,
     pub fps: f32,
     pub tracer_profile: Option<TracerProfile>,
+}
+
+macro_rules! float_slider {
+    ($val:expr, $range:expr, $text:expr, $ui:expr, $changed:expr) => {
+        if egui::Slider::new($val, $range)
+            .text($text)
+            .step_by(0.01)
+            .ui($ui)
+            .changed()
+        {
+            $changed = true;
+        }
+    };
 }
 
 impl UICompositor {
@@ -46,6 +60,9 @@ impl UICompositor {
     }
 
     pub(crate) fn render(&mut self, bundle: Bundle, ctx: &egui::Context) {
+        let mut changed = false;
+        let cfg = &mut self.config.0.borrow_mut();
+
         egui::SidePanel::left("side_panel")
             .resizable(true)
             .show(ctx, |ui| {
@@ -56,13 +73,14 @@ impl UICompositor {
                 }
 
                 ui.collapsing("Tracer Controls", |ui| {
-                    ui.add(
-                        egui::Slider::new(
-                            &mut self.config.0.borrow_mut().slider,
-                            0.0..=std::f32::consts::PI,
-                        )
-                        .text("Slider"),
-                    );
+                    const PI: f32 = std::f32::consts::PI;
+                    float_slider!(&mut cfg.camera.fov, 0.0..=PI, "FOV", ui, changed);
+                    float_slider!(&mut cfg.camera.position.x, -4.0..=4.0, "X", ui, changed);
+                    float_slider!(&mut cfg.camera.position.y, -4.0..=4.0, "Y", ui, changed);
+                    float_slider!(&mut cfg.camera.position.z, -4.0..=4.0, "Z", ui, changed);
+                    float_slider!(&mut cfg.camera.direction.x, -PI..=PI, "Dir X", ui, changed);
+                    float_slider!(&mut cfg.camera.direction.y, -PI..=PI, "Dir Y", ui, changed);
+                    float_slider!(&mut cfg.camera.direction.z, -PI..=PI, "Dir Z", ui, changed);
                 });
 
                 ui.collapsing("Allocator Breakdown", |ui| {
@@ -70,5 +88,9 @@ impl UICompositor {
                         .render_breakdown_ui(ui, &bundle.allocator());
                 });
             });
+
+        if changed {
+            cfg.updated = true;
+        }
     }
 }

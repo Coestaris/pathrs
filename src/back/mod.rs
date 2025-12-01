@@ -8,7 +8,7 @@ use crate::back::push_constants::PushConstantsData;
 use crate::back::ssbo::ParametersSSBOData;
 use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
-use crate::config::TracerConfig;
+use crate::config::{TracerConfig, TracerConfigInner};
 use crate::front::QueueFamilyIndices;
 use crate::tracer::{Bundle, TracerProfile};
 use ash::{vk, Device, Entry, Instance};
@@ -168,7 +168,8 @@ impl Back {
         config: TracerConfig,
         images_custom_usage: vk::ImageUsageFlags,
     ) -> anyhow::Result<Self> {
-        let pipeline = TracerPipeline::new(bundle, asset_manager, viewport, queues, images_custom_usage)?;
+        let pipeline =
+            TracerPipeline::new(bundle, asset_manager, viewport, queues, images_custom_usage)?;
 
         Ok(Self {
             pipeline,
@@ -180,11 +181,18 @@ impl Back {
     pub unsafe fn present(&mut self, bundle: Bundle) -> anyhow::Result<TracerSlot> {
         self.time += 1.0 / 60.0; // For debugging purposes, assume its always 60 fps
 
-        let push_constants = PushConstantsData::new(self.time);
-        let config = self.config.0.borrow();
-        let parameters = ParametersSSBOData::new(config.slider);
+        let mut config = self.config.0.borrow_mut();
+        let parameters_data = if config.updated {
+            config.updated = false;
+            Some(config.as_parameters_data())
+        } else {
+            None
+        };
 
-        self.pipeline.present(bundle, parameters, push_constants)
+        let push_constants = PushConstantsData::new(self.time);
+
+        self.pipeline
+            .present(bundle, parameters_data, push_constants)
     }
 
     pub unsafe fn destroy(&mut self, bundle: Bundle) {
@@ -197,5 +205,14 @@ impl Back {
 
     pub fn get_profile(&self) -> TracerProfile {
         self.pipeline.get_profile()
+    }
+}
+
+impl TracerConfigInner {
+    fn as_parameters_data(&self) -> ParametersSSBOData {
+        ParametersSSBOData {
+            camera_transform: self.camera.as_transform().to_cols_array_2d(),
+            camera_fov: [self.camera.fov, 0.0, 0.0, 0.0],
+        }
     }
 }

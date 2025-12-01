@@ -4,33 +4,15 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use gpu_allocator::MemoryLocation;
 use log::debug;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Default, Clone, Debug)]
 #[repr(C)]
 #[repr(align(128))]
 pub struct ParametersSSBOData {
-    pub slider: f32,
-}
-
-impl PartialEq for ParametersSSBOData {
-    fn eq(&self, other: &Self) -> bool {
-        (self.slider - other.slider).abs() < f32::EPSILON
-    }
-}
-
-impl Default for ParametersSSBOData {
-    fn default() -> Self {
-        Self { slider: 0.0 }
-    }
-}
-
-impl ParametersSSBOData {
-    pub fn new(slider: f32) -> Self {
-        Self { slider }
-    }
+    pub camera_transform: [[f32; 4]; 4],
+    pub camera_fov: [f32; 4],
 }
 
 pub struct ParametersSSBO {
-    pub data: ParametersSSBOData,
     pub buffer: vk::Buffer,
     pub allocation: Option<Allocation>,
     pub destroyed: bool,
@@ -57,7 +39,6 @@ impl ParametersSSBO {
             .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())?;
 
         Ok(Self {
-            data: ParametersSSBOData::default(),
             buffer,
             allocation: Some(allocation),
             destroyed: false,
@@ -76,13 +57,10 @@ impl ParametersSSBO {
     }
 
     pub unsafe fn update(&mut self, data: ParametersSSBOData) {
-        if self.data != data {
-            self.data = data;
-            debug!("Updating ParametersSSBO: {:?}", self.data);
-            let mapped = self.allocation.as_ref().unwrap().mapped_ptr().unwrap();
-            let dst = mapped.as_ptr() as *mut ParametersSSBOData;
-            dst.copy_from_nonoverlapping(&self.data, 1);
-        }
+        debug!("Updating ParametersSSBO: {:?}", data);
+        let mapped = self.allocation.as_ref().unwrap().mapped_ptr().unwrap();
+        let dst = mapped.as_ptr() as *mut ParametersSSBOData;
+        dst.copy_from_nonoverlapping(&data, 1);
     }
 }
 
