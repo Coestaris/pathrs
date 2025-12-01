@@ -225,6 +225,12 @@ impl TracerWindowedFront {
 impl Front for TracerWindowedFront {
     type FrontQueueFamilyIndices = WindowedQueueFamilyIndices;
 
+    unsafe fn get_required_image_usage_flags(
+        _capabilities: &DeviceCapabilities,
+    ) -> vk::ImageUsageFlags {
+        vk::ImageUsageFlags::SAMPLED
+    }
+
     unsafe fn get_required_instance_extensions(
         _available: &Vec<String>,
         _capabilities: &mut InstanceCapabilities,

@@ -19,6 +19,12 @@ pub trait QueueFamilyIndices {
 pub trait Front {
     type FrontQueueFamilyIndices: QueueFamilyIndices + Debug;
 
+    unsafe fn get_required_image_usage_flags(
+        _capabilities: &DeviceCapabilities,
+    ) -> vk::ImageUsageFlags {
+        vk::ImageUsageFlags::empty()
+    }
+
     unsafe fn get_required_instance_extensions(
         _available: &Vec<String>,
         _capabilities: &mut InstanceCapabilities,

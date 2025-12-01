@@ -60,6 +60,16 @@ impl TracerHeadlessOutput {
 impl Front for TracerHeadlessFront {
     type FrontQueueFamilyIndices = HeadlessQueueFamilyIndices;
 
+    unsafe fn get_required_image_usage_flags(
+        capabilities: &DeviceCapabilities,
+    ) -> vk::ImageUsageFlags {
+        if capabilities.host_image_copy {
+            vk::ImageUsageFlags::HOST_TRANSFER_EXT
+        } else {
+            vk::ImageUsageFlags::TRANSFER_SRC
+        }
+    }
+
     unsafe fn get_required_device_extensions(
         &self,
         available: &Vec<String>,

@@ -166,8 +166,9 @@ impl Back {
         viewport: glam::UVec2,
         queues: BackQueues,
         config: TracerConfig,
+        images_custom_usage: vk::ImageUsageFlags,
     ) -> anyhow::Result<Self> {
-        let pipeline = TracerPipeline::new(bundle, asset_manager, viewport, queues)?;
+        let pipeline = TracerPipeline::new(bundle, asset_manager, viewport, queues, images_custom_usage)?;
 
         Ok(Self {
             pipeline,

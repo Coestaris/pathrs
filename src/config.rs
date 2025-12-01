@@ -8,13 +8,19 @@ pub struct TracerConfigInner {
     pub slider: f32,
 }
 
+impl Default for TracerConfigInner {
+    fn default() -> Self {
+        Self { slider: 0.0 }
+    }
+}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct TracerConfig(pub Rc<RefCell<TracerConfigInner>>);
 
 impl Default for TracerConfig {
     fn default() -> Self {
-        Self(Rc::new(RefCell::new(TracerConfigInner { slider: 0.0 })))
+        Self(Rc::new(RefCell::new(TracerConfigInner::default())))
     }
 }
 

@@ -12,7 +12,7 @@ use clap::builder::PossibleValuesParser;
 use clap::Parser;
 use glam::UVec2;
 use image::{ImageBuffer, Rgb};
-use log::{info, LevelFilter};
+use log::{info, warn, LevelFilter};
 use winit::event_loop::{ControlFlow, EventLoop};
 
 mod assets;
@@ -29,15 +29,34 @@ build_info::build_info!(pub fn get_build_info);
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Arguments {
-    #[clap(short = 'l', long, help = "Set the log level", value_parser = PossibleValuesParser::new(["error", "warn", "info", "debug", "trace"]))]
+    #[clap(
+        short = 'l',
+        long,
+        help = "Set the log level",
+        value_parser = PossibleValuesParser::new(["error", "warn", "info", "debug", "trace"])
+    )]
     log_level: Option<String>,
-    #[clap(long, help = "Disable color output")]
+
+    #[clap(
+        long,
+        help = "Disable color output"
+    )]
     no_color: bool,
 
-    #[clap(long, default_value_t = 1280)]
+    #[clap(
+        short = 'x',
+        long,
+        default_value_t = 1280,
+        help = "Width of the default viewport in pixels"
+    )]
     width: u32,
 
-    #[clap(long, default_value_t = 720)]
+    #[clap(
+        short = 'y',
+        long,
+        default_value_t = 720,
+        help = "Height of the default viewport in pixels"
+    )]
     height: u32,
 
     #[clap(
@@ -47,7 +66,11 @@ struct Arguments {
     )]
     headless: Option<String>,
 
-    #[clap(short = 'c', long, help = "Path to the config file in JSON format")]
+    #[clap(
+        short = 'c',
+        long,
+        help = "Path to the config file in JSON format"
+    )]
     config: Option<String>,
 }
 
@@ -79,6 +102,11 @@ fn main() -> anyhow::Result<()> {
 
     let viewport = UVec2::new(args.width, args.height);
     if let Some(path) = args.headless {
+        let path = std::path::PathBuf::from(path);
+        if path.extension() != Some(std::ffi::OsStr::new("png")) {
+            warn!("Headless output path does not have a .png extension, the output image will still be saved as a PNG file");
+        }
+
         unsafe {
             let mut tracer = headless_tracer(
                 config,

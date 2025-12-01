@@ -25,6 +25,7 @@ pub(crate) struct TracerPipeline {
     descriptor_set_layout_0: vk::DescriptorSetLayout,
     descriptor_pool_0: vk::DescriptorPool,
     descriptor_sets_0: Vec<vk::DescriptorSet>, // Size = MAX_DEPTH
+    images_custom_usage: vk::ImageUsageFlags,
 
     // Parameters SSBO
     descriptor_set_layout_1: vk::DescriptorSetLayout,
@@ -62,12 +63,13 @@ impl TracerPipeline {
         asset_manager: AssetManager,
         viewport: glam::UVec2,
         queues: BackQueues,
+        images_custom_usage: vk::ImageUsageFlags,
     ) -> anyhow::Result<Self> {
         let (command_pool, command_buffers) = Self::create_command_buffers(bundle, &queues)
             .context("Failed to create command buffers")?;
 
         let (image_bytesize, images, image_views, image_samplers, image_allocations) =
-            Self::create_images(bundle, &queues, command_pool, viewport)
+            Self::create_images(bundle, &queues, command_pool, viewport, images_custom_usage)
                 .context("Failed to create images")?;
 
         debug!("Creating parameters SSBO");
@@ -119,6 +121,7 @@ impl TracerPipeline {
             descriptor_pool_0,
             descriptor_sets_0,
 
+            images_custom_usage,
             descriptor_set_layout_1,
             descriptor_pool_1,
             descriptor_set_1,
@@ -175,6 +178,7 @@ impl TracerPipeline {
         queues: &BackQueues,
         command_pool: vk::CommandPool,
         viewport: glam::UVec2,
+        images_custom_usage: vk::ImageUsageFlags,
     ) -> anyhow::Result<(
         usize,
         Vec<vk::Image>,
@@ -205,7 +209,7 @@ impl TracerPipeline {
                 .array_layers(1)
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .tiling(vk::ImageTiling::OPTIMAL)
-                .usage(vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::HOST_TRANSFER_EXT)
+                .usage(vk::ImageUsageFlags::STORAGE | images_custom_usage)
                 .sharing_mode(vk::SharingMode::CONCURRENT)
                 .queue_family_indices(&queue_family_indices)
                 .initial_layout(vk::ImageLayout::UNDEFINED);
@@ -694,8 +698,14 @@ impl TracerPipeline {
 
             // Create new images
             let (image_bytesize, images, image_views, image_samplers, image_allocations) =
-                Self::create_images(bundle, &self.queues, self.command_pool, self.viewport)
-                    .context("Failed to create images")?;
+                Self::create_images(
+                    bundle,
+                    &self.queues,
+                    self.command_pool,
+                    self.viewport,
+                    self.images_custom_usage,
+                )
+                .context("Failed to create images")?;
 
             self.images = images;
             self.image_views = image_views;

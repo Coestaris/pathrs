@@ -121,7 +121,7 @@ impl DebugMessenger {
             debug_utils_loader.destroy_debug_utils_messenger(self.handle, None);
             self.destroyed = true;
         } else {
-            warn!("Debug messanger already destroyed");
+            warn!("Debug messenger already destroyed");
         }
     }
 
@@ -154,7 +154,7 @@ impl DebugMessenger {
 impl Drop for DebugMessenger {
     fn drop(&mut self) {
         if !self.destroyed {
-            warn!("Leaked debug messanger");
+            warn!("Leaked debug messenger");
         }
     }
 }
@@ -509,13 +509,13 @@ impl<F: Front> Tracer<F> {
 
         #[cfg(debug_assertions)]
         let debug_messenger = if DebugMessenger::available(&instance_capabilities) {
-            info!("Setting up debug messanger");
+            info!("Setting up debug messenger");
             Some(
                 DebugMessenger::new(&entry, &instance)
-                    .context("Failed to create debug messanger")?,
+                    .context("Failed to create debug messenger")?,
             )
         } else {
-            warn!("Debug messanger not supported on this system");
+            warn!("Debug messenger not supported on this system");
             None
         };
         #[cfg(not(debug_assertions))]
@@ -542,8 +542,15 @@ impl<F: Front> Tracer<F> {
         };
 
         info!("Initializing back-end");
-        let back = Back::new(bundle, asset_manager.clone(), viewport, back_queues, config)
-            .context("Failed to create tracer pipeline")?;
+        let back = Back::new(
+            bundle,
+            asset_manager.clone(),
+            viewport,
+            back_queues,
+            config,
+            D::get_required_image_usage_flags(&device_capabilities),
+        )
+        .context("Failed to create tracer pipeline")?;
 
         info!("Initializing front-end");
         front.init(bundle, front_queues)?;
