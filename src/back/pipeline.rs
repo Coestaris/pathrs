@@ -1,6 +1,7 @@
 use crate::assets::AssetManager;
 use crate::back::push_constants::PushConstantsData;
-use crate::back::ssbo::{ParametersSSBO, ParametersSSBOData};
+use crate::back::ssbo::config::{SSBOConfig, SSBOConfigData};
+use crate::back::ssbo::objects::{SSBOObjects, SSBOObjectsData};
 use crate::back::{BackQueues, TracerSlot, TracerSlotImage};
 use crate::common::command_buffer::CommandBuffer;
 use crate::common::shader::Shader;
@@ -34,7 +35,9 @@ pub(crate) struct TracerPipeline {
 
     query_pool: vk::QueryPool,
     timestamp_period: f32,
-    parameters_ssbo: ParametersSSBO,
+
+    config_ssbo: SSBOConfig,
+    objects_ssbo: SSBOObjects,
 
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
@@ -72,15 +75,17 @@ impl TracerPipeline {
             Self::create_images(bundle, &queues, command_pool, viewport, images_custom_usage)
                 .context("Failed to create images")?;
 
-        debug!("Creating parameters SSBO");
-        let parameters_ssbo =
-            ParametersSSBO::new(bundle).context("Failed to create parameters SSBO")?;
+        debug!("Creating SSBOs");
+        let config_ssbo = SSBOConfig::new(bundle, Some("Config SSBO Buffer"))
+            .context("Failed to create config SSBO")?;
+        let objects_ssbo = SSBOObjects::new(bundle, Some("Objects SSBO Buffer"))
+            .context("Failed to create objects SSBO")?;
 
         let (descriptor_set_layout_0, descriptor_pool_0, descriptor_sets_0) =
             Self::create_descriptor_set_0(bundle, &image_views)
                 .context("Failed to create descriptor set 0 layout")?;
         let (descriptor_set_layout_1, descriptor_pool_1, descriptor_set_1) =
-            Self::create_descriptor_set_1(bundle, &parameters_ssbo)
+            Self::create_descriptor_set_1(bundle, &config_ssbo, &objects_ssbo)
                 .context("Failed to create descriptor set 1 layout")?;
 
         debug!("Creating compute shader");
@@ -128,7 +133,8 @@ impl TracerPipeline {
 
             query_pool,
             timestamp_period,
-            parameters_ssbo,
+            config_ssbo,
+            objects_ssbo,
             pipeline_layout,
             pipeline,
             command_pool,
@@ -380,16 +386,22 @@ impl TracerPipeline {
 
     unsafe fn create_descriptor_set_1(
         bundle: Bundle,
-        parameters_ssbo: &ParametersSSBO,
+        config_ssbo: &SSBOConfig,
+        objects_ssbo: &SSBOObjects,
     ) -> anyhow::Result<(
         vk::DescriptorSetLayout,
         vk::DescriptorPool,
         vk::DescriptorSet,
     )> {
         let bindings = [
-            // (set = 1, binding = 0) buffer parameters
+            // (set = 1, binding = 0) buffer config
             vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::COMPUTE),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::COMPUTE),
@@ -418,15 +430,26 @@ impl TracerPipeline {
         let descriptor_sets = bundle.device.allocate_descriptor_sets(&alloc_info)?;
         let descriptor_set = descriptor_sets[0];
 
-        let parameters_buffer_info = vk::DescriptorBufferInfo::default()
-            .buffer(parameters_ssbo.buffer)
+        let config_buffer_info = vk::DescriptorBufferInfo::default()
+            .buffer(config_ssbo.buffer)
             .offset(0)
             .range(vk::WHOLE_SIZE);
-        let writes = [vk::WriteDescriptorSet::default()
-            .dst_set(descriptor_set)
-            .dst_binding(0)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .buffer_info(std::slice::from_ref(&parameters_buffer_info))];
+        let objects_buffer_info = vk::DescriptorBufferInfo::default()
+            .buffer(objects_ssbo.buffer)
+            .offset(0)
+            .range(vk::WHOLE_SIZE);
+        let writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .buffer_info(std::slice::from_ref(&config_buffer_info)),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(1)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .buffer_info(std::slice::from_ref(&objects_buffer_info)),
+        ];
         bundle.device.update_descriptor_sets(&writes, &[]);
 
         Ok((descriptor_set_layout, descriptor_pool, descriptor_set))
@@ -614,7 +637,8 @@ impl TracerPipeline {
     pub unsafe fn present(
         &mut self,
         bundle: Bundle,
-        parameters_data: Option<ParametersSSBOData>,
+        config_data: Option<SSBOConfigData>,
+        objects_data: Option<SSBOObjectsData>,
         push_constants_data: PushConstantsData,
     ) -> anyhow::Result<TracerSlot> {
         let current_frame = self.current_frame;
@@ -626,9 +650,12 @@ impl TracerPipeline {
                 need_timestamp = true;
             }
 
-            // Update parameters SSBO if needed
-            if let Some(parameters_data) = parameters_data {
-                self.parameters_ssbo.update(parameters_data);
+            // Update config SSBO if needed
+            if let Some(config_data) = config_data {
+                self.config_ssbo.update(config_data);
+            }
+            if let Some(objects_data) = objects_data {
+                self.objects_ssbo.update(objects_data);
             }
 
             self.enqueue_new_frame(bundle, need_timestamp, current_frame, push_constants_data)?;
@@ -769,7 +796,8 @@ impl TracerPipeline {
             }
 
             debug!("Destroying SSBO");
-            self.parameters_ssbo.destroy(bundle);
+            self.config_ssbo.destroy(bundle);
+            self.objects_ssbo.destroy(bundle);
 
             debug!("Destroying descriptor set layout");
             bundle

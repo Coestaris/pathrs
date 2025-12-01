@@ -5,7 +5,8 @@ mod ssbo;
 use crate::assets::AssetManager;
 use crate::back::pipeline::TracerPipeline;
 use crate::back::push_constants::PushConstantsData;
-use crate::back::ssbo::ParametersSSBOData;
+use crate::back::ssbo::config::SSBOConfigData;
+use crate::back::ssbo::objects::{SSBOObjectData, SSBOObjectsData, MAX_OBJECTS};
 use crate::common::capabilities::{DeviceCapabilities, InstanceCapabilities};
 use crate::common::queue::QueueFamily;
 use crate::config::{TracerConfig, TracerConfigInner};
@@ -79,7 +80,7 @@ pub struct Back {
     pipeline: TracerPipeline,
 
     config: TracerConfig,
-    time: f32,
+    frame_index: u64,
 }
 
 impl Back {
@@ -174,25 +175,31 @@ impl Back {
         Ok(Self {
             pipeline,
             config,
-            time: 0.0,
+            frame_index: 0,
         })
     }
 
     pub unsafe fn present(&mut self, bundle: Bundle) -> anyhow::Result<TracerSlot> {
-        self.time += 1.0 / 60.0; // For debugging purposes, assume its always 60 fps
-
         let mut config = self.config.0.borrow_mut();
-        let parameters_data = if config.updated {
-            config.updated = false;
-            Some(config.as_parameters_data())
+
+        // For now do not support changing objects in runtime
+        let objects_data = if self.frame_index == 0 {
+            Some(config.as_objects())
         } else {
             None
         };
 
-        let push_constants = PushConstantsData::new(self.time);
+        let config_data = if config.updated {
+            config.updated = false;
+            Some(config.as_config())
+        } else {
+            None
+        };
 
-        self.pipeline
-            .present(bundle, parameters_data, push_constants)
+        let push_constants = PushConstantsData::new(self.frame_index as f32 / 60.0);
+        self.frame_index += 1;
+
+        self.pipeline.present(bundle, config_data, objects_data, push_constants)
     }
 
     pub unsafe fn destroy(&mut self, bundle: Bundle) {
@@ -209,10 +216,35 @@ impl Back {
 }
 
 impl TracerConfigInner {
-    fn as_parameters_data(&self) -> ParametersSSBOData {
-        ParametersSSBOData {
+    fn as_objects(&self) -> SSBOObjectsData {
+        let mut objects = [SSBOObjectData::default(); MAX_OBJECTS];
+        for (i, object) in self.objects.iter().enumerate() {
+            if i >= MAX_OBJECTS {
+                break;
+            }
+            match object {
+                crate::config::Object::Sphere {
+                    center,
+                    radius,
+                    color,
+                } => {
+                    objects[i] = SSBOObjectData::new_sphere(
+                        *center,
+                        *radius,
+                        glam::Vec4::new(color.x, color.y, color.z, 1.0),
+                    );
+                }
+            }
+        }
+
+        objects
+    }
+
+    fn as_config(&self) -> SSBOConfigData {
+        SSBOConfigData {
             camera_transform: self.camera.as_transform().to_cols_array_2d(),
-            camera_fov: [self.camera.fov, 0.0, 0.0, 0.0],
+            camera_fov: self.camera.fov,
+            objects_count: [self.objects.len() as u32, 0, 0, 0],
         }
     }
 }

@@ -3,32 +3,32 @@ use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use gpu_allocator::MemoryLocation;
 use log::debug;
+use std::fmt::Debug;
 
-#[derive(Default, Clone, Debug)]
-#[repr(C)]
-#[repr(align(128))]
-pub struct ParametersSSBOData {
-    pub camera_transform: [[f32; 4]; 4],
-    pub camera_fov: [f32; 4],
-}
-
-pub struct ParametersSSBO {
+pub mod config;
+pub mod objects;
+pub struct SSBO<T> {
     pub buffer: vk::Buffer,
     pub allocation: Option<Allocation>,
     pub destroyed: bool,
+
+    _marker: std::marker::PhantomData<T>,
 }
 
-impl ParametersSSBO {
-    pub unsafe fn new(bundle: Bundle) -> anyhow::Result<Self> {
+impl<T> SSBO<T>
+where
+    T: Debug,
+{
+    pub unsafe fn new(bundle: Bundle, option: Option<&str>) -> anyhow::Result<Self> {
         let buffer_create_info = vk::BufferCreateInfo::default()
-            .size(size_of::<ParametersSSBOData>() as vk::DeviceSize)
+            .size(size_of::<T>() as vk::DeviceSize)
             .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
         let buffer = bundle.device.create_buffer(&buffer_create_info, None)?;
         let reqs = bundle.device.get_buffer_memory_requirements(buffer);
 
         let allocation = bundle.allocator().allocate(&AllocationCreateDesc {
-            name: "Parameters SSBO Buffer",
+            name: option.as_deref().unwrap_or("SSBO Buffer"),
             requirements: reqs,
             location: MemoryLocation::CpuToGpu,
             linear: true,
@@ -42,6 +42,7 @@ impl ParametersSSBO {
             buffer,
             allocation: Some(allocation),
             destroyed: false,
+            _marker: std::marker::PhantomData,
         })
     }
 
@@ -56,18 +57,18 @@ impl ParametersSSBO {
         }
     }
 
-    pub unsafe fn update(&mut self, data: ParametersSSBOData) {
-        debug!("Updating ParametersSSBO: {:?}", data);
+    pub unsafe fn update(&mut self, data: T) {
+        debug!("Updating SSBO: {:?}", data);
         let mapped = self.allocation.as_ref().unwrap().mapped_ptr().unwrap();
-        let dst = mapped.as_ptr() as *mut ParametersSSBOData;
+        let dst = mapped.as_ptr() as *mut T;
         dst.copy_from_nonoverlapping(&data, 1);
     }
 }
 
-impl Drop for ParametersSSBO {
+impl<T> Drop for SSBO<T> {
     fn drop(&mut self) {
         if !self.destroyed {
-            panic!("ParametersSSBO must be destroyed before being dropped");
+            panic!("SSBO must be destroyed before being dropped");
         }
     }
 }

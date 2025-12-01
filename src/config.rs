@@ -37,9 +37,19 @@ impl Camera {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Object {
+    Sphere {
+        center: Vec3,
+        radius: f32,
+        color: Vec3,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct TracerConfigInner {
     pub camera: Camera,
+    pub objects: Vec<Object>,
     pub updated: bool,
 }
 
@@ -47,6 +57,23 @@ impl Default for TracerConfigInner {
     fn default() -> Self {
         Self {
             camera: Camera::default(),
+            objects: vec![
+                Object::Sphere {
+                    center: Vec3::new(0.0, 0.0, -3.0),
+                    radius: 1.0,
+                    color: Vec3::new(1.0, 0.0, 0.0),
+                },
+                Object::Sphere {
+                    center: Vec3::new(2.0, 0.0, -4.0),
+                    radius: 1.0,
+                    color: Vec3::new(0.0, 1.0, 0.0),
+                },
+                Object::Sphere {
+                    center: Vec3::new(-2.0, 0.0, -4.0),
+                    radius: 1.0,
+                    color: Vec3::new(0.0, 0.0, 1.0),
+                },
+            ],
             updated: true,
         }
     }
