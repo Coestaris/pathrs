@@ -81,6 +81,8 @@ impl UICompositor {
                     float_slider!(&mut cfg.camera.direction.x, -PI..=PI, "Dir X", ui, changed);
                     float_slider!(&mut cfg.camera.direction.y, -PI..=PI, "Dir Y", ui, changed);
                     float_slider!(&mut cfg.camera.direction.z, -PI..=PI, "Dir Z", ui, changed);
+                    float_slider!(&mut cfg.samples_count, 1..=128, "Samples Count", ui, changed);
+                    float_slider!(&mut cfg.jitter_strength, 0.0..=1.0, "Jitter Strength", ui, changed);
                 });
 
                 ui.collapsing("Allocator Breakdown", |ui| {

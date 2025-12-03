@@ -6,7 +6,9 @@ use crate::back::ssbo::SSBO;
 pub struct SSBOConfigData {
     pub camera_transform: [[f32; 4]; 4],
     pub camera_fov: f32,
-    pub objects_count: [u32; 4],
+    pub objects_count: u32,
+    pub samples_count: u32,
+    pub jitter_strength: f32,
 }
 
 pub type SSBOConfig = SSBO<SSBOConfigData>;

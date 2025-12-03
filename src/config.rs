@@ -50,6 +50,8 @@ pub enum Object {
 pub struct TracerConfigInner {
     pub camera: Camera,
     pub objects: Vec<Object>,
+    pub samples_count: u32,
+    pub jitter_strength: f32,
     pub updated: bool,
 }
 
@@ -69,6 +71,8 @@ impl Default for TracerConfigInner {
                     color: Vec3::new(0.3, 0.8, 0.2),
                 },
             ],
+            samples_count: 4,
+            jitter_strength: 0.8,
             updated: true,
         }
     }

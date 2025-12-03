@@ -7,6 +7,8 @@ layout (std430, set = 1, binding = 0) readonly buffer config {
     mat4  camera_transform;
     float camera_fov;
     uint  objects_count;
+    uint  samples_count;
+    float jitter_strength;
 
 } in_config;
 
@@ -40,21 +42,23 @@ float hits_sphere(vec3 center, float radius, vec3 ray_origin, vec3 ray_direction
     float c = dot(oc, oc) - radius * radius;
     float discriminant = b * b - 4.0 * a * c;
 
+    // No intersection
     if (discriminant < 0.0) {
-        return -1.0; // No intersection
-    } else {
-        return (-b - sqrt(discriminant)) / (2.0 * a);
+        return -1.0;
     }
-}
 
-float hits_object(Object obj, vec3 ray_origin, vec3 ray_direction) {
-    if (obj.object_type == OBJECT_TYPE_SPHERE) {
-        vec3 center = obj.data1.xyz;
-        float radius = obj.data2.x;
-        return hits_sphere(center, radius, ray_origin, ray_direction);
-    } else {
-        return -1.0; // Unsupported object type
+    // Find the nearest t that is in front of the ray
+    float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
+    if (t1 > 0.001) {
+        return t1;
     }
+
+    float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
+    if (t2 > 0.001) {
+        return t2;
+    }
+
+    return -1.0;
 }
 
 struct hit_s {
@@ -62,36 +66,54 @@ struct hit_s {
     vec3 point;
     vec3 normal;
     vec3 color;
+    bool front_face;
 };
+
+void set_face_normal(inout hit_s hit, vec3 ray_direction, vec3 outward_normal) {
+    hit.front_face = dot(ray_direction, outward_normal) < 0.0;
+    hit.normal = hit.front_face ? outward_normal : -outward_normal;
+}
+
+bool hits_object(Object obj, vec3 ray_origin, vec3 ray_direction, out hit_s hit) {
+    if (obj.object_type == OBJECT_TYPE_SPHERE) {
+        vec3 center = obj.data1.xyz;
+        float radius = obj.data2.x;
+
+        float t = hits_sphere(center, radius, ray_origin, ray_direction);
+        if (t > 0.0) {
+            hit.t = t;
+            hit.point = ray_origin + t * ray_direction;
+            hit.normal = normalize(hit.point - center);
+            hit.color = obj.color.rgb;
+            set_face_normal(hit, ray_direction, hit.normal);
+            return true;
+        }
+    }
+
+    return false;
+}
 
 bool hits_world(vec3 ray_origin, vec3 ray_direction, out hit_s hit) {
     float closest_t = 1e20;
     bool hit_anything = false;
-    int closest_index = -1;
 
-    for (int i = 0; i <int(in_config.objects_count); i++) {
-        float t = hits_object(objects[i], ray_origin, ray_direction);
-        if (t > 0.0 && t < closest_t) {
-            closest_t = t;
-            closest_index = i;
-            hit_anything = true;
+    for (int i = 0; i < int(in_config.objects_count); i++) {
+        hit_s temp_hit;
+        if (hits_object(objects[i], ray_origin, ray_direction, temp_hit)) {
+            if (temp_hit.t < closest_t) {
+                closest_t = temp_hit.t;
+                hit = temp_hit;
+                hit_anything = true;
+            }
         }
-    }
-
-    if (hit_anything) {
-        hit.t = closest_t;
-        hit.point = ray_origin + closest_t * ray_direction;
-        Object hit_object = objects[closest_index];
-        hit.normal = normalize(hit.point - hit_object.data1.xyz);
-        hit.color = hit_object.color.rgb;
     }
 
     return hit_anything;
 }
 
-vec4 trace(vec3 camera_position, vec3 ray_direction) {
+vec4 trace(vec3 ray_origin, vec3 ray_direction) {
     hit_s hit;
-    if (hits_world(camera_position, ray_direction, hit)) {
+    if (hits_world(ray_origin, ray_direction, hit)) {
         // Simple shading based on normal
         float lighting = max(dot(hit.normal, normalize(vec3(1.0, 1.0, 1.0))), 0.0);
         vec3 color = hit.color * lighting;
@@ -100,6 +122,42 @@ vec4 trace(vec3 camera_position, vec3 ray_direction) {
 
     // If no hit, return sky color
     return sky_color(ray_direction);
+}
+
+// Returns a random float in [0,1)
+float rand(inout uint seed) {
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+    return float(seed % 10000u) / 10000.0;
+}
+
+vec2 jitter(float jitter_strength, inout uint seed) {
+    return vec2(
+        (rand(seed) - 0.5) * jitter_strength,
+        (rand(seed) - 0.5) * jitter_strength
+    );
+}
+
+vec3 ray_direction(vec2 uv, ivec2 viewport, float fov, mat4 camera_transform) {
+    vec2 ndc = uv * 2.0 - 1.0; // [-1..1]
+    float aspect = float(viewport.x) / float(viewport.y);
+    ndc.x *= aspect;
+
+    float scale = tan(fov * 0.5);
+    vec3 dir_cam = normalize(vec3(ndc * scale, -1.0));
+
+    vec3 camera_forward = normalize(camera_transform[2].xyz);
+    vec3 camera_right = normalize(camera_transform[0].xyz);
+    vec3 camera_up = normalize(camera_transform[1].xyz);
+
+    vec3 ray_direction = normalize(
+        dir_cam.x * camera_right +
+        dir_cam.y * camera_up +
+        dir_cam.z * camera_forward
+    );
+
+    return ray_direction;
 }
 
 void main() {
@@ -111,26 +169,25 @@ void main() {
         return;
     }
 
-    vec2 uv = (vec2(pixel_coords) + 0.5) / vec2(viewport); // [0..1]
-    vec2 ndc = uv * 2.0 - 1.0; // [-1..1]
-    float aspect = float(viewport.x) / float(viewport.y);
-    ndc.x *= aspect;
+    vec3 ray_origin = in_config.camera_transform[3].xyz;
+    vec4 color = vec4(0.0);
+    uint seed = uint(pixel_coords.x + pixel_coords.y * viewport.x);
 
-    float fov = in_config.camera_fov.x;
-    float scale = tan(fov * 0.5);
-    vec3 dir_cam = normalize(vec3(ndc * scale, -1.0));
+    for (uint s = 0u; s < in_config.samples_count; s++) {
+        vec2 jitter_offset = jitter(in_config.jitter_strength, seed);
+        vec2 uv = (vec2(pixel_coords) + vec2(0.5) + jitter_offset) / vec2(viewport);
 
-    vec3 camera_forward = normalize(in_config.camera_transform[2].xyz);
-    vec3 camera_right = normalize(in_config.camera_transform[0].xyz);
-    vec3 camera_up = normalize(in_config.camera_transform[1].xyz);
-    vec3 dir_world = normalize(
-        dir_cam.x * camera_right +
-        dir_cam.y * camera_up +
-        dir_cam.z * camera_forward
-    );
-    vec3 camera_position = in_config.camera_transform[3].xyz;
+        uv = clamp(uv, vec2(0.0), vec2(1.0));
 
-    vec4 new_pixel = trace(camera_position, dir_world);
+        vec3 ray_direction = ray_direction(
+            uv,
+            viewport,
+            in_config.camera_fov,
+            in_config.camera_transform
+        );
+        color += trace(ray_origin, ray_direction);
+    }
+    color = color / float(in_config.samples_count);
 
-    imageStore(output_image, pixel_coords, new_pixel);
+    imageStore(output_image, pixel_coords, color);
 }

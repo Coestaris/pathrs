@@ -415,15 +415,15 @@ impl TracerPipeline {
 
         let descriptor_pool_sizes = [vk::DescriptorPoolSize::default()
             .ty(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)];
+            .descriptor_count(2)];
         let descriptor_pool_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&descriptor_pool_sizes)
-            .max_sets(1);
+            .max_sets(2);
         let descriptor_pool = bundle
             .device
             .create_descriptor_pool(&descriptor_pool_info, None)?;
 
-        let layout_handles = vec![descriptor_set_layout; 1];
+        let layout_handles = vec![descriptor_set_layout; 2];
         let alloc_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(descriptor_pool)
             .set_layouts(&layout_handles);

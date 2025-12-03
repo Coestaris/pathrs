@@ -199,7 +199,8 @@ impl Back {
         let push_constants = PushConstantsData::new(self.frame_index as f32 / 60.0);
         self.frame_index += 1;
 
-        self.pipeline.present(bundle, config_data, objects_data, push_constants)
+        self.pipeline
+            .present(bundle, config_data, objects_data, push_constants)
     }
 
     pub unsafe fn destroy(&mut self, bundle: Bundle) {
@@ -244,7 +245,9 @@ impl TracerConfigInner {
         SSBOConfigData {
             camera_transform: self.camera.as_transform().to_cols_array_2d(),
             camera_fov: self.camera.fov,
-            objects_count: [self.objects.len() as u32, 0, 0, 0],
+            objects_count: self.objects.len() as u32,
+            samples_count: self.samples_count,
+            jitter_strength: self.jitter_strength,
         }
     }
 }
