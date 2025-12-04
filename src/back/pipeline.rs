@@ -45,6 +45,7 @@ pub(crate) struct TracerPipeline {
     command_pool: vk::CommandPool,
     command_buffers: Vec<CommandBuffer>, // size = MAX_DEPTH
 
+    should_invalidate: Vec<bool>,               // size = MAX_DEPTH
     images: Vec<vk::Image>,                     // size = MAX_DEPTH
     image_views: Vec<vk::ImageView>,            // size = MAX_DEPTH
     image_samplers: Vec<vk::Sampler>,           // size = MAX_DEPTH
@@ -139,6 +140,7 @@ impl TracerPipeline {
             pipeline,
             command_pool,
             command_buffers,
+            should_invalidate: vec![true; MAX_DEPTH],
             images,
             image_views,
             image_samplers,
@@ -583,11 +585,12 @@ impl TracerPipeline {
         bundle: Bundle,
         need_timestamp: bool,
         index: usize,
-        push_constants_data: PushConstantsData,
+        mut push_constants_data: PushConstantsData,
     ) -> anyhow::Result<()> {
         bundle.device.reset_fences(&[self.fences[index]])?;
 
         let buffer_ptr: *mut CommandBuffer = &mut self.command_buffers[index];
+        push_constants_data.invalidate = self.should_invalidate[index] as u32;
         self.record_command_buffer(
             bundle,
             &*buffer_ptr,
@@ -640,10 +643,16 @@ impl TracerPipeline {
         config_data: Option<SSBOConfigData>,
         objects_data: Option<SSBOObjectsData>,
         push_constants_data: PushConstantsData,
+        invalidate: bool,
     ) -> anyhow::Result<TracerSlot> {
         let current_frame = self.current_frame;
         let status = bundle.device.get_fence_status(self.fences[current_frame])?;
         if status {
+            if invalidate {
+                // Mark all frames as invalidated
+                self.should_invalidate = vec![true; MAX_DEPTH];
+            }
+
             let mut need_timestamp = self.last_finished_frame.is_none();
             if let Some(ms) = self.fetch_render_time(bundle)? {
                 self.profile.render_time = self.profile.render_time.lerp(ms, 0.01);
@@ -671,6 +680,7 @@ impl TracerPipeline {
 
             self.profile.fps = self.fps.update();
 
+            self.should_invalidate[current_frame] = false;
             self.last_finished_frame = Some(current_frame);
             self.current_frame = (self.current_frame + 1) % MAX_DEPTH;
         }

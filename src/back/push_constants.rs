@@ -4,12 +4,16 @@ use ash::vk;
 #[repr(C)]
 #[repr(align(128))]
 pub struct PushConstantsData {
-    time: f32,
+    pub time: f32,
+    pub invalidate: u32,
 }
 
 impl Default for PushConstantsData {
     fn default() -> Self {
-        Self { time: 0.0 }
+        Self {
+            time: 0.0,
+            invalidate: 0,
+        }
     }
 }
 
@@ -23,6 +27,9 @@ impl PushConstantsData {
     }
 
     pub fn new(time: f32) -> Self {
-        Self { time }
+        Self {
+            time,
+            invalidate: 0,
+        }
     }
 }

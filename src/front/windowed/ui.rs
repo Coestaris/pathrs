@@ -1,12 +1,19 @@
 use crate::config::TracerConfig;
+use crate::front::windowed::free_cam::FreeCamera;
 use crate::tracer::{Bundle, TracerProfile};
 use egui::Widget;
 use gpu_allocator::vulkan::AllocatorVisualizer;
+use log::info;
+use winit::event::{ElementState, KeyEvent, WindowEvent};
+use winit::keyboard::{Key, NamedKey};
 
 pub struct UICompositor {
+    config: TracerConfig,
+    free_camera: FreeCamera,
+    visible: bool,
+
     pub egui: egui_winit::State,
     pub allocator_visualizer: AllocatorVisualizer,
-    config: TracerConfig,
     pub fps: f32,
     pub tracer_profile: Option<TracerProfile>,
 }
@@ -42,12 +49,15 @@ impl UICompositor {
     }
 
     pub(crate) fn new(egui: egui_winit::State, config: TracerConfig) -> Self {
+        let initial_camera = config.0.borrow().camera.clone();
         Self {
             egui,
             allocator_visualizer: AllocatorVisualizer::new(),
             config,
             fps: 0.0,
             tracer_profile: None,
+            visible: true,
+            free_camera: FreeCamera::new(initial_camera),
         }
     }
 
@@ -59,9 +69,39 @@ impl UICompositor {
         self.tracer_profile = Some(profile);
     }
 
+    pub fn on_window_event(&mut self, event: &WindowEvent) {
+        self.free_camera.on_window_event(event);
+        match event {
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    logical_key, state, ..
+                },
+                ..
+            } => match (logical_key, state) {
+                (Key::Named(NamedKey::F1), ElementState::Released) => {
+                    info!("Toggling UI visibility");
+                    self.visible = !self.visible;
+                }
+                _ => {}
+            },
+
+            _ => {}
+        }
+    }
+
     pub(crate) fn render(&mut self, bundle: Bundle, ctx: &egui::Context) {
         let mut changed = false;
         let cfg = &mut self.config.0.borrow_mut();
+
+        if let Some(camera_data) = self.free_camera.tick_handler() {
+            cfg.camera.position = camera_data.position;
+            cfg.camera.direction = camera_data.as_direction();
+            cfg.updated = true;
+        }
+
+        if !self.visible {
+            return;
+        }
 
         egui::SidePanel::left("side_panel")
             .resizable(true)
@@ -72,17 +112,29 @@ impl UICompositor {
                     ui.label(format!("Render time: {:.2}", profile.render_time));
                 }
 
+                ui.separator();
+                ui.label("Press F1 to toggle UI visibility");
+                ui.label("Use WASD + Space/Shift to move camera");
+                ui.separator();
+
                 ui.collapsing("Tracer Controls", |ui| {
                     const PI: f32 = std::f32::consts::PI;
                     float_slider!(&mut cfg.camera.fov, 0.0..=PI, "FOV", ui, changed);
-                    float_slider!(&mut cfg.camera.position.x, -4.0..=4.0, "X", ui, changed);
-                    float_slider!(&mut cfg.camera.position.y, -4.0..=4.0, "Y", ui, changed);
-                    float_slider!(&mut cfg.camera.position.z, -4.0..=4.0, "Z", ui, changed);
-                    float_slider!(&mut cfg.camera.direction.x, -PI..=PI, "Dir X", ui, changed);
-                    float_slider!(&mut cfg.camera.direction.y, -PI..=PI, "Dir Y", ui, changed);
-                    float_slider!(&mut cfg.camera.direction.z, -PI..=PI, "Dir Z", ui, changed);
-                    float_slider!(&mut cfg.samples_count, 1..=128, "Samples Count", ui, changed);
-                    float_slider!(&mut cfg.jitter_strength, 0.0..=1.0, "Jitter Strength", ui, changed);
+                    float_slider!(&mut cfg.samples_count, 1..=64, "Samples Count", ui, changed);
+                    float_slider!(
+                        &mut cfg.jitter_strength,
+                        0.0..=1.0,
+                        "Jitter Strength",
+                        ui,
+                        changed
+                    );
+                    float_slider!(
+                        &mut cfg.temporal_accumulation,
+                        0.0..=1.0,
+                        "Temporal Accumulation",
+                        ui,
+                        changed
+                    );
                 });
 
                 ui.collapsing("Allocator Breakdown", |ui| {

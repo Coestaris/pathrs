@@ -52,6 +52,7 @@ pub struct TracerConfigInner {
     pub objects: Vec<Object>,
     pub samples_count: u32,
     pub jitter_strength: f32,
+    pub temporal_accumulation: f32,
     pub updated: bool,
 }
 
@@ -73,6 +74,7 @@ impl Default for TracerConfigInner {
             ],
             samples_count: 4,
             jitter_strength: 0.8,
+            temporal_accumulation: 0.9,
             updated: true,
         }
     }

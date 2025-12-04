@@ -21,6 +21,7 @@ mod front;
 mod pipeline;
 mod quad;
 mod ui;
+mod free_cam;
 
 struct Context {
     fps: Fps,
@@ -128,11 +129,11 @@ impl ApplicationHandler for TracerApp {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         let context = self.context.as_mut().unwrap();
 
-        let _ = context
-            .ui
-            .borrow_mut()
-            .egui
-            .on_window_event(&context.window, &event);
+        {
+            let ui = &mut context.ui.borrow_mut();
+            let _ = ui.egui.on_window_event(&context.window, &event);
+            let _ = ui.on_window_event(&event);
+        }
 
         match event {
             WindowEvent::Resized(physical_size) => unsafe {

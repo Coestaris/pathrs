@@ -182,6 +182,10 @@ impl Back {
     pub unsafe fn present(&mut self, bundle: Bundle) -> anyhow::Result<TracerSlot> {
         let mut config = self.config.0.borrow_mut();
 
+        let time = self.frame_index as f32 / 60.0;
+        let invalidate = config.updated;
+        let push_constants = PushConstantsData::new(time);
+
         // For now do not support changing objects in runtime
         let objects_data = if self.frame_index == 0 {
             Some(config.as_objects())
@@ -196,11 +200,15 @@ impl Back {
             None
         };
 
-        let push_constants = PushConstantsData::new(self.frame_index as f32 / 60.0);
         self.frame_index += 1;
 
-        self.pipeline
-            .present(bundle, config_data, objects_data, push_constants)
+        self.pipeline.present(
+            bundle,
+            config_data,
+            objects_data,
+            push_constants,
+            invalidate,
+        )
     }
 
     pub unsafe fn destroy(&mut self, bundle: Bundle) {
@@ -248,6 +256,7 @@ impl TracerConfigInner {
             objects_count: self.objects.len() as u32,
             samples_count: self.samples_count,
             jitter_strength: self.jitter_strength,
+            temporal_accumulation: self.temporal_accumulation,
         }
     }
 }

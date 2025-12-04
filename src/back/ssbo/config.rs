@@ -9,6 +9,7 @@ pub struct SSBOConfigData {
     pub objects_count: u32,
     pub samples_count: u32,
     pub jitter_strength: f32,
+    pub temporal_accumulation: f32,
 }
 
 pub type SSBOConfig = SSBO<SSBOConfigData>;
