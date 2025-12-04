@@ -18,9 +18,10 @@ layout (std430, set = 1, binding = 0) readonly buffer config {
 
 struct Object {
     uint object_type;
-    vec4 color;
-    vec4 data1; // Position
-    vec4 data2; // For spheres: radius in x component
+    vec4 albedo;
+    vec4 metallic_roughness;// metallic in x, roughness in y
+    vec4 data1;// Position
+    vec4 data2;// For spheres: radius in x component
 };
 
 layout (std430, set = 1, binding = 1) readonly buffer world_objects {
@@ -97,8 +98,12 @@ struct hit_s {
     float t;
     vec3 point;
     vec3 normal;
-    vec3 color;
     bool front_face;
+
+    // Material properties
+    vec3 albedo;
+    float metallic;
+    float roughness;
 };
 
 void set_face_normal(inout hit_s hit, vec3 ray_direction, vec3 outward_normal) {
@@ -117,7 +122,9 @@ bool hits_object(Object obj, vec3 ray_origin, vec3 ray_direction, minmax_s bound
             hit.t = t;
             hit.point = ray_origin + t * ray_direction;
             hit.normal = normalize(hit.point - center);
-            hit.color = obj.color.rgb;
+            hit.albedo = obj.albedo.rgb;
+            hit.metallic = obj.metallic_roughness.x;
+            hit.roughness = obj.metallic_roughness.y;
             set_face_normal(hit, ray_direction, hit.normal);
             return true;
         }
@@ -143,23 +150,12 @@ bool hits_world(vec3 ray_origin, vec3 ray_direction, minmax_s bounds, out hit_s 
 
 #define MAX_BOUNCES 10
 
-vec3 hit_to_color(vec3 ray_direction, hit_s hit) {
-    // Simple diffuse shading based on normal
-
-//    vec3 light_dir = normalize(vec3(1.0, 1.0, 1.0));
-//    float light_intensity = max(dot(hit.normal, light_dir), 0.0);
-//    vec4 base_color = vec4(hit.color, 1.0);
-//    return base_color.rgb * light_intensity;
-
-    return hit.color;
-}
-
 vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed) {
     vec3 bounce_dir = ray_direction;
     vec3 bounce_origin = ray_origin;
 
     vec3 color = vec3(0.0);
-    float attenuation = 1.0;
+    vec3 attenuation = vec3(1.0);
 
     minmax_s bounds;
     bounds.min = 0.001;
@@ -169,19 +165,25 @@ vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed) {
         hit_s hit;
         if (!hits_world(bounce_origin, bounce_dir, bounds, hit)) {
             // Hit the sky
-            color = attenuation * sky_color(bounce_dir);
+            color += attenuation * sky_color(bounce_dir);
             break;
         } else {
             // Hit an object
-            color = attenuation * hit_to_color(bounce_dir, hit);
+            color += attenuation * vec3(0.0);// No emission for now
         }
 
-        // Simple energy loss
-        attenuation *= 0.2;
+        attenuation *= hit.albedo;
 
         // Prepare for next bounce
-        bounce_dir = normalize(hit.normal + rand_unit(seed));
-        bounce_origin = hit.point + 0.001 * bounce_dir; // Offset to avoid self-intersection
+        vec3 reflected = reflect(bounce_dir, hit.normal);
+        vec3 scatter = hit.normal + rand_unit(seed) * hit.roughness;
+        // Catch degenerate scatter direction
+        if (length(scatter) < 1e-3) {
+            scatter = hit.normal;
+        }
+        bounce_dir = normalize(mix(scatter, reflected, hit.metallic));
+
+        bounce_origin = hit.point + 0.001 * bounce_dir;// Offset to avoid self-intersection
     }
 
     return vec4(color, 1.0);

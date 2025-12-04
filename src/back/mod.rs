@@ -235,13 +235,9 @@ impl TracerConfigInner {
                 crate::config::Object::Sphere {
                     center,
                     radius,
-                    color,
+                    material,
                 } => {
-                    objects[i] = SSBOObjectData::new_sphere(
-                        *center,
-                        *radius,
-                        glam::Vec4::new(color.x, color.y, color.z, 1.0),
-                    );
+                    objects[i] = SSBOObjectData::new_sphere(*center, *radius, material);
                 }
             }
         }

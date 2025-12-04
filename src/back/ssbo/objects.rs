@@ -1,5 +1,6 @@
 use crate::back::ssbo::SSBO;
 use glam::{Vec3, Vec4};
+use crate::config::Material;
 
 const OBJECT_TYPE_SPHERE: u32 = 1;
 
@@ -11,16 +12,18 @@ pub const MAX_OBJECTS: usize = 128;
 #[derive(Copy)]
 pub struct SSBOObjectData {
     pub object_type: [u32; 4],
-    pub color: [f32; 4],
+    pub albedo: [f32; 4],
+    pub metallic_roughness: [f32; 4],
     pub data2: [f32; 4],
     pub data3: [f32; 4],
 }
 
 impl SSBOObjectData {
-    pub(crate) fn new_sphere(center: Vec3, radius: f32, color: Vec4) -> Self {
+    pub(crate) fn new_sphere(center: Vec3, radius: f32, material: &Material) -> Self {
         Self {
             object_type: [OBJECT_TYPE_SPHERE, 0, 0, 0],
-            color: [color.x, color.y, color.z, color.w],
+            albedo: [material.albedo.x, material.albedo.y, material.albedo.z, 0.0],
+            metallic_roughness: [material.metallic, material.roughness, 0.0, 0.0],
             data2: [center[0], center[1], center[2], 0.0],
             data3: [radius, 0.0, 0.0, 0.0],
         }

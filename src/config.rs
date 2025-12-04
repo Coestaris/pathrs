@@ -37,11 +37,18 @@ impl Camera {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Material {
+    pub albedo: Vec3,
+    pub metallic: f32,
+    pub roughness: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Object {
     Sphere {
         center: Vec3,
         radius: f32,
-        color: Vec3,
+        material: Material,
     },
 }
 
@@ -62,14 +69,40 @@ impl Default for TracerConfigInner {
             camera: Camera::default(),
             objects: vec![
                 Object::Sphere {
-                    center: Vec3::new(0.0, 0.0, -1.0),
-                    radius: 0.5,
-                    color: Vec3::new(1.0, 0.0, 0.0),
-                },
-                Object::Sphere {
                     center: Vec3::new(0.0, -100.5, -1.0),
                     radius: 100.0,
-                    color: Vec3::new(0.3, 0.8, 0.2),
+                    material: Material {
+                        albedo: Vec3::new(0.8, 0.8, 0.0),
+                        metallic: 0.0,
+                        roughness: 1.0,
+                    },
+                },
+                Object::Sphere {
+                    center: Vec3::new(0.0, 0.0, -1.2),
+                    radius: 0.5,
+                    material: Material {
+                        albedo: Vec3::new(0.1, 0.2, 0.5),
+                        metallic: 0.0,
+                        roughness: 1.0,
+                    },
+                },
+                Object::Sphere {
+                    center: Vec3::new(-1.0, 0.0, -1.0),
+                    radius: 0.5,
+                    material: Material {
+                        albedo: Vec3::new(0.8, 0.8, 0.8),
+                        metallic: 0.3,
+                        roughness: 1.0,
+                    },
+                },
+                Object::Sphere {
+                    center: Vec3::new(1.0, 0.0, -1.0),
+                    radius: 0.5,
+                    material: Material {
+                        albedo: Vec3::new(0.8, 0.6, 0.2),
+                        metallic: 0.0,
+                        roughness: 1.0,
+                    },
                 },
             ],
             samples_count: 4,
