@@ -1,6 +1,6 @@
 use crate::back::ssbo::SSBO;
-use glam::{Vec3, Vec4};
 use crate::config::Material;
+use glam::Vec3;
 
 const OBJECT_TYPE_SPHERE: u32 = 1;
 

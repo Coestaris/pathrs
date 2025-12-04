@@ -1,8 +1,7 @@
-use glam::{FloatExt, Mat4, Vec2, Vec3};
-use std::f32::consts::PI;
+use crate::config::Camera;
+use glam::{FloatExt, Vec2, Vec3};
 use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::keyboard::{Key, NamedKey};
-use crate::config::Camera;
 
 #[derive(Clone, Copy, Debug)]
 pub struct CameraData {
@@ -178,7 +177,7 @@ impl FreeCamera {
             self.instant.yaw = self.instant.yaw - pos_delta.x * ROTATE_SPEED;
 
             // Clamp pitch to prevent gimbal lock
-            self.instant.pitch = (self.instant.pitch - pos_delta.y * ROTATE_SPEED);
+            self.instant.pitch = self.instant.pitch - pos_delta.y * ROTATE_SPEED;
         }
 
         // Smoothly interpolate position and rotation

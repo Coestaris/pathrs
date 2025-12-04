@@ -183,11 +183,12 @@ impl Back {
         let mut config = self.config.0.borrow_mut();
 
         let time = self.frame_index as f32 / 60.0;
-        let invalidate = config.updated;
+        let invalidate = config.updated || config.objects_updated;
         let push_constants = PushConstantsData::new(time);
 
         // For now do not support changing objects in runtime
-        let objects_data = if self.frame_index == 0 {
+        let objects_data = if config.objects_updated {
+            config.objects_updated = false;
             Some(config.as_objects())
         } else {
             None

@@ -91,6 +91,7 @@ impl UICompositor {
 
     pub(crate) fn render(&mut self, bundle: Bundle, ctx: &egui::Context) {
         let mut changed = false;
+        let mut objects_changed = false;
         let cfg = &mut self.config.0.borrow_mut();
 
         if let Some(camera_data) = self.free_camera.tick_handler() {
@@ -135,6 +136,21 @@ impl UICompositor {
                         ui,
                         changed
                     );
+
+                    float_slider!(
+                        &mut cfg.objects[2].as_material_mut().roughness,
+                        0.0..=1.0,
+                        "Sphere 3 Roughness",
+                        ui,
+                        objects_changed
+                    );
+                    float_slider!(
+                        &mut cfg.objects[2].as_material_mut().metallic,
+                        0.0..=1.0,
+                        "Sphere 3 Metallic",
+                        ui,
+                        objects_changed
+                    );
                 });
 
                 ui.collapsing("Allocator Breakdown", |ui| {
@@ -145,6 +161,9 @@ impl UICompositor {
 
         if changed {
             cfg.updated = true;
+        }
+        if objects_changed {
+            cfg.objects_updated = true;
         }
     }
 }

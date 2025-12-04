@@ -167,23 +167,22 @@ vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed) {
             // Hit the sky
             color += attenuation * sky_color(bounce_dir);
             break;
-        } else {
-            // Hit an object
-            color += attenuation * vec3(0.0);// No emission for now
         }
 
         attenuation *= hit.albedo;
 
         // Prepare for next bounce
-        vec3 reflected = reflect(bounce_dir, hit.normal);
-        vec3 scatter = hit.normal + rand_unit(seed) * hit.roughness;
+        vec3 reflected = normalize(reflect(bounce_dir, hit.normal)) * (hit.metallic);
+
+        vec3 scatter = hit.normal + rand_unit(seed);
         // Catch degenerate scatter direction
         if (length(scatter) < 1e-3) {
             scatter = hit.normal;
         }
-        bounce_dir = normalize(mix(scatter, reflected, hit.metallic));
+        scatter *= hit.roughness;
 
-        bounce_origin = hit.point + 0.001 * bounce_dir;// Offset to avoid self-intersection
+        bounce_dir = normalize(scatter + reflected);
+        bounce_origin = hit.point + 0.001 * bounce_dir; // Offset to avoid self-intersection
     }
 
     return vec4(color, 1.0);

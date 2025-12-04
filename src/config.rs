@@ -52,6 +52,14 @@ pub enum Object {
     },
 }
 
+impl Object {
+    pub fn as_material_mut(&mut self) -> &mut Material {
+        match self {
+            Object::Sphere { material, .. } => material,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct TracerConfigInner {
@@ -60,55 +68,93 @@ pub struct TracerConfigInner {
     pub samples_count: u32,
     pub jitter_strength: f32,
     pub temporal_accumulation: f32,
+    
     pub updated: bool,
+    pub objects_updated: bool,
+}
+
+#[allow(dead_code)]
+fn scene_simple() -> Vec<Object> {
+    vec![
+        Object::Sphere {
+            center: Vec3::new(0.0, -100.5, -1.0),
+            radius: 100.0,
+            material: Material {
+                albedo: Vec3::new(0.8, 0.8, 0.0),
+                metallic: 0.0,
+                roughness: 1.0,
+            },
+        },
+        Object::Sphere {
+            center: Vec3::new(0.0, 0.0, -1.2),
+            radius: 0.5,
+            material: Material {
+                albedo: Vec3::new(0.1, 0.2, 0.5),
+                metallic: 0.2,
+                roughness: 1.0,
+            },
+        },
+        Object::Sphere {
+            center: Vec3::new(-1.0, 0.0, -1.0),
+            radius: 0.5,
+            material: Material {
+                albedo: Vec3::new(0.8, 0.8, 0.8),
+                metallic: 0.8,
+                roughness: 0.1,
+            },
+        },
+        Object::Sphere {
+            center: Vec3::new(1.0, 0.0, -1.0),
+            radius: 0.5,
+            material: Material {
+                albedo: Vec3::new(0.8, 0.6, 0.2),
+                metallic: 0.2,
+                roughness: 0.9,
+            },
+        },
+    ]
+}
+
+#[allow(dead_code)]
+fn scene_array() -> Vec<Object> {
+    let mut objects = Vec::new();
+    const ALBEDO: Vec3 = Vec3::new(0.1, 0.2, 0.5);
+    const RADIUS: f32 = 0.5;
+    const OFFSET: f32 = RADIUS * 2.3;
+    const SIDE: usize = 8;
+
+    for x in 0..SIDE {
+        for y in 0..SIDE {
+            objects.push(Object::Sphere {
+                center: Vec3::new(
+                    x as f32 * OFFSET - OFFSET / 2.0,
+                    y as f32 * OFFSET - OFFSET / 2.0,
+                    0.0,
+                ),
+                radius: RADIUS,
+                material: Material {
+                    albedo: ALBEDO,
+                    metallic: (x as f32) / (SIDE as f32 - 1.0),
+                    roughness: (y as f32) / (SIDE as f32 - 1.0),
+                },
+            })
+        }
+    }
+
+    objects
 }
 
 impl Default for TracerConfigInner {
     fn default() -> Self {
         Self {
             camera: Camera::default(),
-            objects: vec![
-                Object::Sphere {
-                    center: Vec3::new(0.0, -100.5, -1.0),
-                    radius: 100.0,
-                    material: Material {
-                        albedo: Vec3::new(0.8, 0.8, 0.0),
-                        metallic: 0.0,
-                        roughness: 1.0,
-                    },
-                },
-                Object::Sphere {
-                    center: Vec3::new(0.0, 0.0, -1.2),
-                    radius: 0.5,
-                    material: Material {
-                        albedo: Vec3::new(0.1, 0.2, 0.5),
-                        metallic: 0.0,
-                        roughness: 1.0,
-                    },
-                },
-                Object::Sphere {
-                    center: Vec3::new(-1.0, 0.0, -1.0),
-                    radius: 0.5,
-                    material: Material {
-                        albedo: Vec3::new(0.8, 0.8, 0.8),
-                        metallic: 0.3,
-                        roughness: 1.0,
-                    },
-                },
-                Object::Sphere {
-                    center: Vec3::new(1.0, 0.0, -1.0),
-                    radius: 0.5,
-                    material: Material {
-                        albedo: Vec3::new(0.8, 0.6, 0.2),
-                        metallic: 0.0,
-                        roughness: 1.0,
-                    },
-                },
-            ],
-            samples_count: 4,
+            objects: scene_simple(),
+            // objects: scene_array(),
+            samples_count: 1,
             jitter_strength: 0.8,
             temporal_accumulation: 0.9,
             updated: true,
+            objects_updated: true,
         }
     }
 }
