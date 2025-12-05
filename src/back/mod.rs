@@ -254,7 +254,6 @@ impl TracerConfigInner {
             camera_fov: self.camera.fov,
             objects_count: self.objects.len() as u32,
             samples_count: self.samples_count,
-            jitter_strength: self.jitter_strength,
             max_bounces: self.max_bounces,
             sky_color_top: *self.sky_color_top.extend(0.0).as_ref(),
             sky_color_bottom: *self.sky_color_bottom.extend(0.0).as_ref(),

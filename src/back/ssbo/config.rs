@@ -8,7 +8,6 @@ pub struct SSBOConfigData {
     pub camera_fov: f32,
     pub objects_count: u32,
     pub samples_count: u32,
-    pub jitter_strength: f32,
     pub max_bounces: u32,
     pub sky_color_top: [f32; 4],
     pub sky_color_bottom: [f32; 4],

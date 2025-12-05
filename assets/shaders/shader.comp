@@ -9,7 +9,6 @@ layout (std430, set = 1, binding = 0) readonly buffer config {
     float camera_fov;
     uint  objects_count;
     uint  samples_count;
-    float jitter_strength;
     uint max_bounces;
     vec4 sky_color_top;
     vec4 sky_color_bottom;
@@ -206,13 +205,6 @@ vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed) {
     return vec4(incoming_radiance, 1.0);
 }
 
-vec2 jitter(float jitter_strength, inout uint seed) {
-    return vec2(
-        (rand(seed) - 0.5) * jitter_strength,
-        (rand(seed) - 0.5) * jitter_strength
-    );
-}
-
 vec3 ray_direction(vec2 uv, ivec2 viewport, float fov, mat4 camera_transform) {
     vec2 ndc = uv * 2.0 - 1.0; // [-1..1]
     float aspect = float(viewport.x) / float(viewport.y);
@@ -247,22 +239,18 @@ void main() {
     vec4 color = vec4(0.0);
 
     // Deterministic seed used for jitter calculation
-    uint jitter_seed = pixel_coords.x * viewport.x + pixel_coords.y + in_runtime.frame_index * 7919u;
+    uint seed = pixel_coords.x * viewport.x + pixel_coords.y + in_runtime.frame_index * 7919u;
 
-    // Seed used for tracing rays
-    uint trace_seed = jitter_seed;
+    vec2 uv = vec2(pixel_coords) / vec2(viewport);
+    vec3 ray_direction = ray_direction(
+        uv,
+        viewport,
+        in_config.camera_fov,
+        in_config.camera_transform
+    );
 
     for (uint s = 0u; s < in_config.samples_count; s++) {
-        vec2 jitter_offset = jitter(in_config.jitter_strength, jitter_seed);
-        vec2 uv = (vec2(pixel_coords) + vec2(0.5) + jitter_offset) / vec2(viewport);
-
-        vec3 ray_direction = ray_direction(
-            uv,
-            viewport,
-            in_config.camera_fov,
-            in_config.camera_transform
-        );
-        color += trace(ray_origin, ray_direction, trace_seed);
+        color += trace(ray_origin, ray_direction, seed);
     }
     color = color / float(in_config.samples_count);
 

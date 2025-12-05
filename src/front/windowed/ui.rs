@@ -121,14 +121,7 @@ impl UICompositor {
                 ui.collapsing("Tracer Controls", |ui| {
                     const PI: f32 = std::f32::consts::PI;
                     float_slider!(&mut cfg.camera.fov, 0.0..=PI, "FOV", ui, changed);
-                    float_slider!(&mut cfg.samples_count, 1..=64, "Samples Count", ui, changed);
-                    float_slider!(
-                        &mut cfg.jitter_strength,
-                        0.0..=1.0,
-                        "Jitter Strength",
-                        ui,
-                        changed
-                    );
+                    float_slider!(&mut cfg.samples_count, 1..=150, "Samples Count", ui, changed);
                     float_slider!(
                         &mut cfg.max_bounces,
                         1..=16,
