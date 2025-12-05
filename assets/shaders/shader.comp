@@ -35,7 +35,7 @@ struct hit_s
 };
 
 layout (local_size_x = 16, local_size_y = 16) in;
-layout (set = 0, binding = 0, rgba8) uniform image2D output_image;
+layout (set = 0, binding = 0, rgba32f) uniform image2D output_image;
 
 // TODO: Compile-time configuration as VkSpecializationInfo
 layout (std430, set = 1, binding = 0) readonly buffer config
@@ -79,7 +79,8 @@ float rand_normal(inout uint seed)
     const float stddev = 1.0;
 
     float theta = 2.0 * 3.14159265359 * rand(seed);
-    float rho = sqrt(-2.0 * log(1.0 - rand(seed)));
+    float u = clamp(rand(seed), 1e-7, 1.0 - 1e-7);
+    float rho = sqrt(-2.0 * log(1.0 - u));
     return mean + stddev * rho * cos(theta);
 }
 
@@ -254,26 +255,26 @@ vec3 ray_direction(vec2 uv, ivec2 viewport, float fov, mat4 camera_transform)
 
 vec3 trace_oversample(ivec2 viewport, ivec2 pixel_coords, inout uint seed)
 {
-    vec2 uv = vec2(pixel_coords) / vec2(viewport);
-    vec3 ray_direction = ray_direction(
-        uv,
-        viewport,
-        in_config.camera_fov,
-        in_config.camera_transform
-    );
+
 
     vec3 color = vec3(0.0);
     vec3 ray_origin = in_config.camera_transform[3].xyz;
     for (uint s = 0u; s < in_config.samples_count; s++)
     {
+        vec2 jitter = vec2(rand(seed), rand(seed));
+        vec2 uv = vec2(pixel_coords) / vec2(viewport) + (jitter - 0.5) / vec2(viewport);
+        vec3 ray_direction = ray_direction(
+            uv,
+            viewport,
+            in_config.camera_fov,
+            in_config.camera_transform
+        );
+
         color += trace(ray_origin, ray_direction, seed);
     }
 
     // Average the samples
     color = color / float(in_config.samples_count);
-
-    // Simple gamma correction
-    color.rgb = pow(color.rgb, vec3(1.0 / 2.2));
 
     return color;
 }
@@ -298,9 +299,14 @@ void main()
     }
 
     // Deterministic seed used for jitter calculation
-    uint seed = pixel_coords.x * viewport.x + pixel_coords.y + in_runtime.frame_index * 7919u;
+    uint seed = (pixel_coords.x * viewport.x + pixel_coords.y) ^ in_runtime.frame_index * (viewport.x + viewport.y);
     // Trace the pixel with oversampling
     vec3 color = trace_oversample(viewport, pixel_coords, seed);
+
+    if (any(isnan(color)) || any(isinf(color)))
+    {
+        color = vec3(1.0, 0.0, 1.0); // Magenta for error
+    }
 
     // Store the result with temporal accumulation
     if (in_runtime.invalidate == 1u)

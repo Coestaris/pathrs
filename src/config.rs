@@ -79,21 +79,21 @@ pub struct TracerConfigInner {
 fn scene_simple() -> Vec<Object> {
     vec![
         Object::Sphere {
-            center: Vec3::new(-8.0, 4.5, -9.0),
-            radius: 3.0,
+            center: Vec3::new(-8.0, 4.5, 9.0),
+            radius: 1.0,
             material: Material {
                 albedo: Vec3::new(0.0, 0.0, 0.0),
                 emission_color: Vec3::new(1.0, 1.0, 1.0),
-                emission_strength: 3.00,
+                emission_strength: 5.00,
             },
         },
         Object::Sphere {
             center: Vec3::new(16.0, 4.5, -9.0),
-            radius: 3.0,
+            radius: 1.0,
             material: Material {
                 albedo: Vec3::new(0.0, 0.0, 0.0),
                 emission_color: Vec3::new(1.0, 1.0, 1.0),
-                emission_strength: 3.00,
+                emission_strength: 5.00,
             },
         },
         Object::Sphere {

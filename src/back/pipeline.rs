@@ -207,7 +207,7 @@ impl TracerPipeline {
             ];
             let create_image_info = vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
-                .format(vk::Format::R8G8B8A8_UNORM)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
                 .extent(vk::Extent3D {
                     width: viewport.x,
                     height: viewport.y,
@@ -242,7 +242,7 @@ impl TracerPipeline {
             let image_view_info = vk::ImageViewCreateInfo::default()
                 .image(image)
                 .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::R8G8B8A8_UNORM)
+                .format(vk::Format::R32G32B32A32_SFLOAT)
                 .subresource_range(
                     vk::ImageSubresourceRange::default()
                         .aspect_mask(vk::ImageAspectFlags::COLOR)
