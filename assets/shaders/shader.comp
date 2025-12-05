@@ -247,10 +247,7 @@ void main() {
     vec4 color = vec4(0.0);
 
     // Deterministic seed used for jitter calculation
-    uint jitter_seed = pixel_coords.x * 123156 ^ pixel_coords.y * 962322 ^
-        viewport.x * 523232 ^
-        viewport.y * 984981 ^
-        in_runtime.frame_index * 7213766;
+    uint jitter_seed = pixel_coords.x * viewport.x + pixel_coords.y + in_runtime.frame_index * 7919u;
 
     // Seed used for tracing rays
     uint trace_seed = jitter_seed;
