@@ -182,9 +182,11 @@ impl Back {
     pub unsafe fn present(&mut self, bundle: Bundle) -> anyhow::Result<TracerSlot> {
         let mut config = self.config.0.borrow_mut();
 
-        let time = self.frame_index as f32 / 60.0;
         let invalidate = config.updated || config.objects_updated;
-        let push_constants = PushConstantsData::new(time);
+        if invalidate {
+            self.frame_index = 0;
+        }
+        let push_constants = PushConstantsData::new(self.frame_index as u32);
 
         // For now do not support changing objects in runtime
         let objects_data = if config.objects_updated {
@@ -253,7 +255,10 @@ impl TracerConfigInner {
             objects_count: self.objects.len() as u32,
             samples_count: self.samples_count,
             jitter_strength: self.jitter_strength,
-            temporal_accumulation: self.temporal_accumulation,
+            max_bounces: self.max_bounces,
+            sky_color_top: *self.sky_color_top.extend(0.0).as_ref(),
+            sky_color_bottom: *self.sky_color_bottom.extend(0.0).as_ref(),
+            ground_color: *self.ground_color.extend(0.0).as_ref(),
         }
     }
 }

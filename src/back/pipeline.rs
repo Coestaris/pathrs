@@ -14,7 +14,7 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use log::{debug, warn};
 
 const COMPUTE_ASSET: &str = "shaders/shader.comp.spv";
-const MAX_DEPTH: usize = 2;
+const MAX_DEPTH: usize = 1;
 
 pub(crate) struct TracerPipeline {
     queues: BackQueues,

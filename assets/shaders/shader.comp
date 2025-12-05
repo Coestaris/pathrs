@@ -10,7 +10,10 @@ layout (std430, set = 1, binding = 0) readonly buffer config {
     uint  objects_count;
     uint  samples_count;
     float jitter_strength;
-    float temporal_accumulation;
+    uint max_bounces;
+    vec4 sky_color_top;
+    vec4 sky_color_bottom;
+    vec4 ground_color;
 
 } in_config;
 
@@ -19,7 +22,8 @@ layout (std430, set = 1, binding = 0) readonly buffer config {
 struct Object {
     uint object_type;
     vec4 albedo;
-    vec4 metallic_roughness;// metallic in x, roughness in y
+    vec4 emission_color;
+    vec4 material_properties; // x: emission_strength, y: unused, z: unused, w: unused
     vec4 data1;// Position
     vec4 data2;// For spheres: radius in x component
 };
@@ -29,27 +33,58 @@ layout (std430, set = 1, binding = 1) readonly buffer world_objects {
 };
 
 layout (push_constant) uniform constants {
-    float time;
+    uint frame_index;
     uint invalidate;
 
 } in_runtime;
 
+struct minmax_s {
+    float min;
+    float max;
+};
+
+struct material_s {
+    vec3 albedo;
+    vec3 emission_color;
+    float emission_strength;
+};
+
+struct hit_s {
+    float t;
+    vec3 point;
+    vec3 normal;
+    bool front_face;
+    material_s material;
+};
+
 // Returns a random float in [0,1)
+// PCG (Permuted Congruential Generator) algorithm
 float rand(inout uint seed) {
-    seed = seed * 1664525u + 1013904223u;  // LCG
-    return float(seed) * (1.0 / 4294967296.0); // / 2^32
+    seed = seed * 747796405u + 2891336453u;
+    uint word = ((seed >> ((seed >> 28u) + 4u)) ^ seed) * 277803737u;
+    word = (word >> 22u) ^ word;
+    return float(word) / 4294967296.0;
 }
 
-vec3 rand_unit(inout uint seed) {
+float rand_normal(inout uint seed) {
+    const float mean = 0.0;
+    const float stddev = 1.0;
+
+    float theta = 2.0 * 3.14159265359 * rand(seed);
+    float rho = sqrt(-2.0 * log(1.0 - rand(seed)));
+    return mean + stddev * rho * cos(theta);
+}
+
+vec3 rand_normal_vec3(inout uint seed) {
     return normalize(vec3(
-        rand(seed) * 2.0 - 1.0,
-        rand(seed) * 2.0 - 1.0,
-        rand(seed) * 2.0 - 1.0
+        rand_normal(seed),
+        rand_normal(seed),
+        rand_normal(seed)
     ));
 }
 
 vec3 rand_hemisphere(vec3 normal, inout uint seed) {
-    vec3 in_unit_sphere = rand_unit(seed);
+    vec3 in_unit_sphere = rand_normal_vec3(seed);
     if (dot(in_unit_sphere, normal) > 0.0) {
         return in_unit_sphere;
     } else {
@@ -59,13 +94,13 @@ vec3 rand_hemisphere(vec3 normal, inout uint seed) {
 
 vec3 sky_color(vec3 direction) {
     float t = 0.5 * (direction.y + 1.0);
-    return mix(vec3(1.0, 1.0, 1.0), vec3(0.5, 0.7, 1.0), t);
-}
+    vec3 sky = mix(in_config.sky_color_bottom.rgb, in_config.sky_color_top.rgb, t);
 
-struct minmax_s {
-    float min;
-    float max;
-};
+    float ground_to_sky = smoothstep(-0.1, 0.1, direction.y);
+    vec3 ground = in_config.ground_color.rgb;
+
+    return mix(ground, sky, ground_to_sky);
+}
 
 float hits_sphere(vec3 center, float radius, vec3 ray_origin, vec3 ray_direction, minmax_s bounds) {
     vec3 oc = ray_origin - center;
@@ -93,18 +128,11 @@ float hits_sphere(vec3 center, float radius, vec3 ray_origin, vec3 ray_direction
     return -1.0;
 }
 
-struct hit_s {
-    bool valid;
-    float t;
-    vec3 point;
-    vec3 normal;
-    bool front_face;
-
-    // Material properties
-    vec3 albedo;
-    float metallic;
-    float roughness;
-};
+void set_material_properties(inout hit_s hit, Object obj) {
+    hit.material.albedo = obj.albedo.rgb;
+    hit.material.emission_color = obj.emission_color.rgb;
+    hit.material.emission_strength = obj.material_properties.x;
+}
 
 void set_face_normal(inout hit_s hit, vec3 ray_direction, vec3 outward_normal) {
     hit.front_face = dot(ray_direction, outward_normal) < 0.0;
@@ -118,13 +146,10 @@ bool hits_object(Object obj, vec3 ray_origin, vec3 ray_direction, minmax_s bound
 
         float t = hits_sphere(center, radius, ray_origin, ray_direction, bounds);
         if (t > 0.0) {
-            hit.valid = true;
             hit.t = t;
             hit.point = ray_origin + t * ray_direction;
             hit.normal = normalize(hit.point - center);
-            hit.albedo = obj.albedo.rgb;
-            hit.metallic = obj.metallic_roughness.x;
-            hit.roughness = obj.metallic_roughness.y;
+            set_material_properties(hit, obj);
             set_face_normal(hit, ray_direction, hit.normal);
             return true;
         }
@@ -148,44 +173,37 @@ bool hits_world(vec3 ray_origin, vec3 ray_direction, minmax_s bounds, out hit_s 
     return hit_anything;
 }
 
-#define MAX_BOUNCES 10
-
 vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed) {
     vec3 bounce_dir = ray_direction;
     vec3 bounce_origin = ray_origin;
 
-    vec3 color = vec3(0.0);
-    vec3 attenuation = vec3(1.0);
+    vec3 incoming_radiance = vec3(0.0);
+    vec3 color = vec3(1.0);
 
     minmax_s bounds;
     bounds.min = 0.001;
     bounds.max = 1e20;
 
-    for (int bounce = 0; bounce < MAX_BOUNCES; bounce++) {
+    for (int bounce = 0; bounce < int(in_config.max_bounces); bounce++) {
         hit_s hit;
         if (!hits_world(bounce_origin, bounce_dir, bounds, hit)) {
             // Hit the sky
-            color += attenuation * sky_color(bounce_dir);
+//            incoming_radiance += color * sky_color(bounce_dir);
             break;
         }
 
-        attenuation *= hit.albedo;
+        // Accumulate emission
+        incoming_radiance += color * hit.material.emission_color * hit.material.emission_strength;
+        // Update color by albedo
+        color *= hit.material.albedo;
 
-        // Prepare for next bounce
-        vec3 reflected = normalize(reflect(bounce_dir, hit.normal)) * (hit.metallic);
-
-        vec3 scatter = hit.normal + rand_unit(seed);
-        // Catch degenerate scatter direction
-        if (length(scatter) < 1e-3) {
-            scatter = hit.normal;
-        }
-        scatter *= hit.roughness;
-
-        bounce_dir = normalize(scatter + reflected);
+        // Scatter ray
+        vec3 scatter = rand_hemisphere(hit.normal, seed);
+        bounce_dir = normalize(scatter);
         bounce_origin = hit.point + 0.001 * bounce_dir; // Offset to avoid self-intersection
     }
 
-    return vec4(color, 1.0);
+    return vec4(incoming_radiance, 1.0);
 }
 
 vec2 jitter(float jitter_strength, inout uint seed) {
@@ -229,7 +247,11 @@ void main() {
     vec4 color = vec4(0.0);
 
     // Deterministic seed used for jitter calculation
-    uint jitter_seed = uint(pixel_coords.x + pixel_coords.y * viewport.x) + uint(in_runtime.time * 1000.0);
+    uint jitter_seed = pixel_coords.x * 123156 ^ pixel_coords.y * 962322 ^
+        viewport.x * 523232 ^
+        viewport.y * 984981 ^
+        in_runtime.frame_index * 7213766;
+
     // Seed used for tracing rays
     uint trace_seed = jitter_seed;
 
@@ -251,11 +273,11 @@ void main() {
     color.rgb = pow(color.rgb, vec3(1.0 / 2.2));
 
     // If invalidate is set, we overwrite the pixel directly
-    if (in_runtime.invalidate == 1u) {
-        imageStore(output_image, pixel_coords, color);
-    } else {
+    if (in_runtime.invalidate != 1u) {
+        float alpha = 1.0 / float(in_runtime.frame_index + 1u);
         vec4 old_color = imageLoad(output_image, pixel_coords);
-        color = mix(color, old_color, in_config.temporal_accumulation);
-        imageStore(output_image, pixel_coords, color);
+        color = mix(old_color, color, alpha);
     }
+
+    imageStore(output_image, pixel_coords, color);
 }

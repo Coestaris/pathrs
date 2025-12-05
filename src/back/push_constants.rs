@@ -4,14 +4,14 @@ use ash::vk;
 #[repr(C)]
 #[repr(align(128))]
 pub struct PushConstantsData {
-    pub time: f32,
+    pub frame_index: u32,
     pub invalidate: u32,
 }
 
 impl Default for PushConstantsData {
     fn default() -> Self {
         Self {
-            time: 0.0,
+            frame_index: 0,
             invalidate: 0,
         }
     }
@@ -26,9 +26,9 @@ impl PushConstantsData {
         }
     }
 
-    pub fn new(time: f32) -> Self {
+    pub fn new(frame_index: u32) -> Self {
         Self {
-            time,
+            frame_index,
             invalidate: 0,
         }
     }

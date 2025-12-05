@@ -4,14 +4,18 @@ Path tracer using Vulkan in Rust
 TODO list:
 - [x] Draw a triangle
 - [x] Draw a fullscreen quad in a Windowed frontend
-- [ ] Implement simple resource management for loading shaders, textures, models
+- [x] Implement simple resource management for loading shaders, textures, models
 - [x] Implement a basic compute shader that fills offscreen texture
 - [x] Add [egui](https://github.com/emilk/egui) for debugging purposes
-- [ ] Implement a basic path tracing algorithm in the compute shader for spheres:
-  - [ ] Intersection tests
-  - [ ] Material handling
-  - [ ] Multisampling
 - [ ] Headless mode (without window)
+  - [x] Offscreen rendering to a texture
+  - [ ] Temporal accumulation 
+- [x] Implement a basic path tracing algorithm in the compute shader for spheres:
+  - [x] Sphere intersection
+  - [x] Light scattering
+  - [x] Temporal accumulation
+  - [x] Antialiasing
+  - [ ] Materials (diffuse, metal, dielectric)
 
 ### References
 
@@ -23,6 +27,9 @@ Vulkan tutorials and examples:
 
 Raytracing tutorials and examples:
 - [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html) by Peter Shirley;
+- [Ray Tracing: The Next Week](https://raytracing.github.io/books/RayTracingTheNextWeek.html) by Peter Shirley;
+- [Ray Tracing: The Rest of Your Life](https://raytracing.github.io/books/RayTracingTheRestOfYourLife.html) by Peter Shirley;
+- [Smallpt: Global Illumination in 99 lines of C++](https://www.kevinbeason.com/smallpt/) by Kevin Beason;
 - [A Vulkan path tracer in C++](https://github.com/Zydak/Vulkan-Path-Tracer) by Zydak;
 - [YouTube | I wrote a Ray Tracer from scratch... in a Year](https://www.youtube.com/watch?v=wzZJzyX0UkI) by Jacob Gordiak.
 

@@ -39,8 +39,8 @@ impl Camera {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Material {
     pub albedo: Vec3,
-    pub metallic: f32,
-    pub roughness: f32,
+    pub emission_color: Vec3,
+    pub emission_strength: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,7 +67,10 @@ pub struct TracerConfigInner {
     pub objects: Vec<Object>,
     pub samples_count: u32,
     pub jitter_strength: f32,
-    pub temporal_accumulation: f32,
+    pub max_bounces: u32,
+    pub sky_color_top: Vec3,
+    pub sky_color_bottom: Vec3,
+    pub ground_color: Vec3,
     
     pub updated: bool,
     pub objects_updated: bool,
@@ -77,12 +80,30 @@ pub struct TracerConfigInner {
 fn scene_simple() -> Vec<Object> {
     vec![
         Object::Sphere {
+            center: Vec3::new(-8.0, 4.5, -9.0),
+            radius: 3.0,
+            material: Material {
+                albedo: Vec3::new(0.0, 0.0, 0.0),
+                emission_color: Vec3::new(1.0, 1.0, 1.0),
+                emission_strength: 3.00,
+            },
+        },
+        Object::Sphere {
+            center: Vec3::new(16.0, 4.5, -9.0),
+            radius: 3.0,
+            material: Material {
+                albedo: Vec3::new(0.0, 0.0, 0.0),
+                emission_color: Vec3::new(1.0, 1.0, 1.0),
+                emission_strength: 3.00,
+            },
+        },
+        Object::Sphere {
             center: Vec3::new(0.0, -100.5, -1.0),
             radius: 100.0,
             material: Material {
-                albedo: Vec3::new(0.8, 0.8, 0.0),
-                metallic: 0.0,
-                roughness: 1.0,
+                albedo: Vec3::new(0.2, 0.4, 0.4),
+                emission_color: Vec3::new(0.0, 0.0, 0.0),
+                emission_strength: 0.00,
             },
         },
         Object::Sphere {
@@ -90,8 +111,8 @@ fn scene_simple() -> Vec<Object> {
             radius: 0.5,
             material: Material {
                 albedo: Vec3::new(0.1, 0.2, 0.5),
-                metallic: 0.2,
-                roughness: 1.0,
+                emission_color: Vec3::new(0.0, 0.0, 0.0),
+                emission_strength: 0.00,
             },
         },
         Object::Sphere {
@@ -99,8 +120,8 @@ fn scene_simple() -> Vec<Object> {
             radius: 0.5,
             material: Material {
                 albedo: Vec3::new(0.8, 0.8, 0.8),
-                metallic: 0.8,
-                roughness: 0.1,
+                emission_color: Vec3::new(0.0, 0.0, 0.0),
+                emission_strength: 0.00,
             },
         },
         Object::Sphere {
@@ -108,8 +129,8 @@ fn scene_simple() -> Vec<Object> {
             radius: 0.5,
             material: Material {
                 albedo: Vec3::new(0.8, 0.6, 0.2),
-                metallic: 0.2,
-                roughness: 0.9,
+                emission_color: Vec3::new(0.0, 0.0, 0.0),
+                emission_strength: 0.00,
             },
         },
     ]
@@ -134,8 +155,8 @@ fn scene_array() -> Vec<Object> {
                 radius: RADIUS,
                 material: Material {
                     albedo: ALBEDO,
-                    metallic: (x as f32) / (SIDE as f32 - 1.0),
-                    roughness: (y as f32) / (SIDE as f32 - 1.0),
+                    emission_color: Vec3::new(0.0, 0.0, 0.0),
+                    emission_strength: 0.00,
                 },
             })
         }
@@ -152,7 +173,10 @@ impl Default for TracerConfigInner {
             // objects: scene_array(),
             samples_count: 1,
             jitter_strength: 0.8,
-            temporal_accumulation: 0.9,
+            max_bounces: 5,
+            sky_color_top: Vec3::new(1.0, 1.0, 1.0),
+            sky_color_bottom: Vec3::new(0.5, 0.7, 1.0),
+            ground_color: Vec3::new(0.8, 0.8, 0.0),
             updated: true,
             objects_updated: true,
         }

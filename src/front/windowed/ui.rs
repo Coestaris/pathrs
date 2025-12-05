@@ -130,27 +130,29 @@ impl UICompositor {
                         changed
                     );
                     float_slider!(
-                        &mut cfg.temporal_accumulation,
-                        0.0..=1.0,
-                        "Temporal Accumulation",
-                        ui,
-                        changed
+                        &mut cfg.max_bounces,
+                        1..=16,
+                        "Max Bounces",
+                        ui, changed
                     );
-
-                    float_slider!(
-                        &mut cfg.objects[2].as_material_mut().roughness,
-                        0.0..=1.0,
-                        "Sphere 3 Roughness",
-                        ui,
-                        objects_changed
-                    );
-                    float_slider!(
-                        &mut cfg.objects[2].as_material_mut().metallic,
-                        0.0..=1.0,
-                        "Sphere 3 Metallic",
-                        ui,
-                        objects_changed
-                    );
+                    if ui
+                        .color_edit_button_rgb(&mut cfg.sky_color_top.as_mut())
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                    if ui
+                        .color_edit_button_rgb(&mut cfg.sky_color_bottom.as_mut())
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                    if ui
+                        .color_edit_button_rgb(&mut cfg.ground_color.as_mut())
+                        .changed()
+                    {
+                        changed = true;
+                    }
                 });
 
                 ui.collapsing("Allocator Breakdown", |ui| {
