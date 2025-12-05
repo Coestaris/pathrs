@@ -192,7 +192,7 @@ bool hits_world(vec3 ray_origin, vec3 ray_direction, minmax_s bounds, out hit_s 
     return hit_anything;
 }
 
-vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed)
+vec3 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed)
 {
     vec3 bounce_dir = ray_direction;
     vec3 bounce_origin = ray_origin;
@@ -227,7 +227,7 @@ vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed)
         bounce_origin = hit.point + 0.001 * bounce_dir; // Offset to avoid self-intersection
     }
 
-    return vec4(incoming_radiance, 1.0);
+    return incoming_radiance;
 }
 
 vec3 ray_direction(vec2 uv, ivec2 viewport, float fov, mat4 camera_transform)
@@ -252,7 +252,7 @@ vec3 ray_direction(vec2 uv, ivec2 viewport, float fov, mat4 camera_transform)
     return ray_direction;
 }
 
-vec4 trace_oversample(ivec2 viewport, ivec2 pixel_coords, inout uint seed)
+vec3 trace_oversample(ivec2 viewport, ivec2 pixel_coords, inout uint seed)
 {
     vec2 uv = vec2(pixel_coords) / vec2(viewport);
     vec3 ray_direction = ray_direction(
@@ -262,7 +262,7 @@ vec4 trace_oversample(ivec2 viewport, ivec2 pixel_coords, inout uint seed)
         in_config.camera_transform
     );
 
-    vec4 color = vec4(0.0);
+    vec3 color = vec3(0.0);
     vec3 ray_origin = in_config.camera_transform[3].xyz;
     for (uint s = 0u; s < in_config.samples_count; s++)
     {
@@ -278,12 +278,12 @@ vec4 trace_oversample(ivec2 viewport, ivec2 pixel_coords, inout uint seed)
     return color;
 }
 
-void store_temporal(ivec2 pixel_coords, vec4 color)
+void store_temporal(ivec2 pixel_coords, vec3 color)
 {
-    vec4 old_color = imageLoad(output_image, pixel_coords);
+    vec3 old_color = imageLoad(output_image, pixel_coords).rgb;
     float alpha = 1.0 / float(in_runtime.frame_index + 1u);
     color = mix(old_color, color, alpha);
-    imageStore(output_image, pixel_coords, color);
+    imageStore(output_image, pixel_coords, vec4(color, 0.0));
 }
 
 void main()
@@ -300,12 +300,12 @@ void main()
     // Deterministic seed used for jitter calculation
     uint seed = pixel_coords.x * viewport.x + pixel_coords.y + in_runtime.frame_index * 7919u;
     // Trace the pixel with oversampling
-    vec4 color = trace_oversample(viewport, pixel_coords, seed);
+    vec3 color = trace_oversample(viewport, pixel_coords, seed);
 
     // Store the result with temporal accumulation
     if (in_runtime.invalidate == 1u)
     {
-        imageStore(output_image, pixel_coords, color);
+        imageStore(output_image, pixel_coords, vec4(color, 0.0));
     }
     else
     {
