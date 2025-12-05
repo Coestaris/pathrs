@@ -1,24 +1,9 @@
 #version 450
 
-layout (local_size_x = 16, local_size_y = 16) in;
-layout (set = 0, binding = 0, rgba8) uniform image2D output_image;
-
-// TODO: Compile-time configuration as VkSpecializationInfo
-layout (std430, set = 1, binding = 0) readonly buffer config {
-    mat4  camera_transform;
-    float camera_fov;
-    uint  objects_count;
-    uint  samples_count;
-    uint max_bounces;
-    vec4 sky_color_top;
-    vec4 sky_color_bottom;
-    vec4 ground_color;
-
-} in_config;
-
 #define OBJECT_TYPE_SPHERE 1u
 
-struct Object {
+struct Object
+{
     uint object_type;
     vec4 albedo;
     vec4 emission_color;
@@ -27,28 +12,21 @@ struct Object {
     vec4 data2;// For spheres: radius in x component
 };
 
-layout (std430, set = 1, binding = 1) readonly buffer world_objects {
-    Object objects[];
-};
-
-layout (push_constant) uniform constants {
-    uint frame_index;
-    uint invalidate;
-
-} in_runtime;
-
-struct minmax_s {
+struct minmax_s
+{
     float min;
     float max;
 };
 
-struct material_s {
+struct material_s
+{
     vec3 albedo;
     vec3 emission_color;
     float emission_strength;
 };
 
-struct hit_s {
+struct hit_s
+{
     float t;
     vec3 point;
     vec3 normal;
@@ -56,16 +34,47 @@ struct hit_s {
     material_s material;
 };
 
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (set = 0, binding = 0, rgba8) uniform image2D output_image;
+
+// TODO: Compile-time configuration as VkSpecializationInfo
+layout (std430, set = 1, binding = 0) readonly buffer config
+{
+    mat4  camera_transform;
+    float camera_fov;
+    uint  objects_count;
+    uint  samples_count;
+    uint  max_bounces;
+    vec4  sky_color_top;
+    vec4  sky_color_bottom;
+    vec4  ground_color;
+
+} in_config;
+
+layout (std430, set = 1, binding = 1) readonly buffer world_objects
+{
+    Object objects[];
+};
+
+layout (push_constant) uniform constants
+{
+    uint frame_index; // Reseted when any config changes
+    uint invalidate; // If set, we overwrite the pixel instead of blending
+
+} in_runtime;
+
 // Returns a random float in [0,1)
 // PCG (Permuted Congruential Generator) algorithm
-float rand(inout uint seed) {
+float rand(inout uint seed)
+{
     seed = seed * 747796405u + 2891336453u;
     uint word = ((seed >> ((seed >> 28u) + 4u)) ^ seed) * 277803737u;
     word = (word >> 22u) ^ word;
     return float(word) / 4294967296.0;
 }
 
-float rand_normal(inout uint seed) {
+float rand_normal(inout uint seed)
+{
     const float mean = 0.0;
     const float stddev = 1.0;
 
@@ -74,7 +83,8 @@ float rand_normal(inout uint seed) {
     return mean + stddev * rho * cos(theta);
 }
 
-vec3 rand_normal_vec3(inout uint seed) {
+vec3 rand_normal_vec3(inout uint seed)
+{
     return normalize(vec3(
         rand_normal(seed),
         rand_normal(seed),
@@ -82,16 +92,14 @@ vec3 rand_normal_vec3(inout uint seed) {
     ));
 }
 
-vec3 rand_hemisphere(vec3 normal, inout uint seed) {
+vec3 rand_hemisphere(vec3 normal, inout uint seed)
+{
     vec3 in_unit_sphere = rand_normal_vec3(seed);
-    if (dot(in_unit_sphere, normal) > 0.0) {
-        return in_unit_sphere;
-    } else {
-        return -in_unit_sphere;
-    }
+    return sign(dot(in_unit_sphere, normal)) * in_unit_sphere;
 }
 
-vec3 sky_color(vec3 direction) {
+vec3 sky_color(vec3 direction)
+{
     float t = 0.5 * (direction.y + 1.0);
     vec3 sky = mix(in_config.sky_color_bottom.rgb, in_config.sky_color_top.rgb, t);
 
@@ -101,7 +109,8 @@ vec3 sky_color(vec3 direction) {
     return mix(ground, sky, ground_to_sky);
 }
 
-float hits_sphere(vec3 center, float radius, vec3 ray_origin, vec3 ray_direction, minmax_s bounds) {
+float hits_sphere(vec3 center, float radius, vec3 ray_origin, vec3 ray_direction, minmax_s bounds)
+{
     vec3 oc = ray_origin - center;
     float a = dot(ray_direction, ray_direction);
     float b = 2.0 * dot(oc, ray_direction);
@@ -109,42 +118,50 @@ float hits_sphere(vec3 center, float radius, vec3 ray_origin, vec3 ray_direction
     float discriminant = b * b - 4.0 * a * c;
 
     // No intersection
-    if (discriminant < 0.0) {
+    if (discriminant < 0.0)
+    {
         return -1.0;
     }
 
     // Find the nearest t that is in front of the ray
     float t1 = (-b - sqrt(discriminant)) / (2.0 * a);
-    if (t1 > bounds.min && t1 < bounds.max) {
+    if (t1 > bounds.min && t1 < bounds.max)
+    {
         return t1;
     }
 
     float t2 = (-b + sqrt(discriminant)) / (2.0 * a);
-    if (t2 > bounds.min && t2 < bounds.max) {
+    if (t2 > bounds.min && t2 < bounds.max)
+    {
         return t2;
     }
 
     return -1.0;
 }
 
-void set_material_properties(inout hit_s hit, Object obj) {
+void set_material_properties(inout hit_s hit, Object obj)
+{
     hit.material.albedo = obj.albedo.rgb;
     hit.material.emission_color = obj.emission_color.rgb;
     hit.material.emission_strength = obj.material_properties.x;
 }
 
-void set_face_normal(inout hit_s hit, vec3 ray_direction, vec3 outward_normal) {
+void set_face_normal(inout hit_s hit, vec3 ray_direction, vec3 outward_normal)
+{
     hit.front_face = dot(ray_direction, outward_normal) < 0.0;
     hit.normal = hit.front_face ? outward_normal : -outward_normal;
 }
 
-bool hits_object(Object obj, vec3 ray_origin, vec3 ray_direction, minmax_s bounds, out hit_s hit) {
-    if (obj.object_type == OBJECT_TYPE_SPHERE) {
+bool hits_object(Object obj, vec3 ray_origin, vec3 ray_direction, minmax_s bounds, out hit_s hit)
+{
+    if (obj.object_type == OBJECT_TYPE_SPHERE)
+    {
         vec3 center = obj.data1.xyz;
         float radius = obj.data2.x;
 
         float t = hits_sphere(center, radius, ray_origin, ray_direction, bounds);
-        if (t > 0.0) {
+        if (t > 0.0)
+        {
             hit.t = t;
             hit.point = ray_origin + t * ray_direction;
             hit.normal = normalize(hit.point - center);
@@ -157,12 +174,15 @@ bool hits_object(Object obj, vec3 ray_origin, vec3 ray_direction, minmax_s bound
     return false;
 }
 
-bool hits_world(vec3 ray_origin, vec3 ray_direction, minmax_s bounds, out hit_s hit) {
+bool hits_world(vec3 ray_origin, vec3 ray_direction, minmax_s bounds, out hit_s hit)
+{
     bool hit_anything = false;
 
-    for (int i = 0; i < int(in_config.objects_count); i++) {
+    for (int i = 0; i < int(in_config.objects_count); i++)
+    {
         hit_s temp_hit;
-        if (hits_object(objects[i], ray_origin, ray_direction, bounds, temp_hit)) {
+        if (hits_object(objects[i], ray_origin, ray_direction, bounds, temp_hit))
+        {
             hit = temp_hit;
             hit_anything = true;
             bounds.max = temp_hit.t;
@@ -172,7 +192,8 @@ bool hits_world(vec3 ray_origin, vec3 ray_direction, minmax_s bounds, out hit_s 
     return hit_anything;
 }
 
-vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed) {
+vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed)
+{
     vec3 bounce_dir = ray_direction;
     vec3 bounce_origin = ray_origin;
 
@@ -183,11 +204,14 @@ vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed) {
     bounds.min = 0.001;
     bounds.max = 1e20;
 
-    for (int bounce = 0; bounce < int(in_config.max_bounces); bounce++) {
+    for (int bounce = 0; bounce < int(in_config.max_bounces); bounce++)
+    {
         hit_s hit;
-        if (!hits_world(bounce_origin, bounce_dir, bounds, hit)) {
+        if (!hits_world(bounce_origin, bounce_dir, bounds, hit))
+        {
             // Hit the sky
-//            incoming_radiance += color * sky_color(bounce_dir);
+            // TODO: Environment mapping
+            // incoming_radiance += color * sky_color(bounce_dir);
             break;
         }
 
@@ -205,7 +229,8 @@ vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed) {
     return vec4(incoming_radiance, 1.0);
 }
 
-vec3 ray_direction(vec2 uv, ivec2 viewport, float fov, mat4 camera_transform) {
+vec3 ray_direction(vec2 uv, ivec2 viewport, float fov, mat4 camera_transform)
+{
     vec2 ndc = uv * 2.0 - 1.0; // [-1..1]
     float aspect = float(viewport.x) / float(viewport.y);
     ndc.x *= aspect;
@@ -226,21 +251,8 @@ vec3 ray_direction(vec2 uv, ivec2 viewport, float fov, mat4 camera_transform) {
     return ray_direction;
 }
 
-void main() {
-    ivec2 viewport = imageSize(output_image);
-    ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
-
-    if (pixel_coords.x >= viewport.x || pixel_coords.y >= viewport.y)
-    {
-        return;
-    }
-
-    vec3 ray_origin = in_config.camera_transform[3].xyz;
-    vec4 color = vec4(0.0);
-
-    // Deterministic seed used for jitter calculation
-    uint seed = pixel_coords.x * viewport.x + pixel_coords.y + in_runtime.frame_index * 7919u;
-
+vec4 trace_oversample(ivec2 viewport, ivec2 pixel_coords, inout uint seed)
+{
     vec2 uv = vec2(pixel_coords) / vec2(viewport);
     vec3 ray_direction = ray_direction(
         uv,
@@ -249,20 +261,53 @@ void main() {
         in_config.camera_transform
     );
 
-    for (uint s = 0u; s < in_config.samples_count; s++) {
+    vec4 color = vec4(0.0);
+    vec3 ray_origin = in_config.camera_transform[3].xyz;
+    for (uint s = 0u; s < in_config.samples_count; s++)
+    {
         color += trace(ray_origin, ray_direction, seed);
     }
+
+    // Average the samples
     color = color / float(in_config.samples_count);
 
     // Simple gamma correction
     color.rgb = pow(color.rgb, vec3(1.0 / 2.2));
 
-    // If invalidate is set, we overwrite the pixel directly
-    if (in_runtime.invalidate != 1u) {
-        float alpha = 1.0 / float(in_runtime.frame_index + 1u);
-        vec4 old_color = imageLoad(output_image, pixel_coords);
-        color = mix(old_color, color, alpha);
+    return color;
+}
+
+void store_temporal(ivec2 pixel_coords, vec4 color)
+{
+    vec4 old_color = imageLoad(output_image, pixel_coords);
+    float alpha = 1.0 / float(in_runtime.frame_index + 1u);
+    color = mix(old_color, color, alpha);
+    imageStore(output_image, pixel_coords, color);
+}
+
+void main()
+{
+    ivec2 viewport = imageSize(output_image);
+    ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
+
+    // Out of bounds check
+    if (pixel_coords.x >= viewport.x || pixel_coords.y >= viewport.y)
+    {
+        return;
     }
 
-    imageStore(output_image, pixel_coords, color);
+    // Deterministic seed used for jitter calculation
+    uint seed = pixel_coords.x * viewport.x + pixel_coords.y + in_runtime.frame_index * 7919u;
+    // Trace the pixel with oversampling
+    vec4 color = trace_oversample(viewport, pixel_coords, seed);
+
+    // Store the result with temporal accumulation
+    if (in_runtime.invalidate == 1u)
+    {
+        imageStore(output_image, pixel_coords, color);
+    }
+    else
+    {
+        store_temporal(pixel_coords, color);
+    }
 }
