@@ -218,7 +218,8 @@ vec4 trace(vec3 ray_origin, vec3 ray_direction, inout uint seed)
         // Accumulate emission
         incoming_radiance += color * hit.material.emission_color * hit.material.emission_strength;
         // Update color by albedo
-        color *= hit.material.albedo;
+        float light_reflectance = max(dot(hit.normal, -bounce_dir), 0.0);
+        color *= hit.material.albedo * light_reflectance;
 
         // Scatter ray
         vec3 scatter = rand_hemisphere(hit.normal, seed);
